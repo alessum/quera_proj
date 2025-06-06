@@ -1,2 +1,11 @@
 .DS_Store
 .ipynb_checkpoints
+*.jl
+BraketAHS.jl
+data
+amazon-braket-aws-sdk
+AlexFunctions
+Manifest.toml
+Project.toml
+populations.csv
+check.ipynb
