@@ -3,18 +3,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from hamiltonian_wrapper import RydbergLatticeSystem, plt
+from math import pi
 
 # ─── 1) DEFINE A SIMPLE 2D LATTICE ──────────────────────────────────────
-L = 3                    # 3×3 grid → 9 sites
-spacing = 6.65
-positions = [(i * spacing, j * spacing) for i in range(L) for j in range(L)]
+Lx, Ly = 13, 1                   
+spacing = 3.73
+positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
 N_sites = len(positions)
 
 h_arr = np.zeros(N_sites)  # no local fields
-Delta_G, Delta_L, C6 = 125, 0.0, 5.42*(10**6)
+Delta_G, Delta_L, C6 = 4*pi*4.91, 0.0, 5.42*(10**6)
 
 def Omega_t(t):
-    return 15.8 + 0.0*t
+    return 2.8*pi + 0.0*t
 
 def phi_t(t):
     return 0.0 + 0.0*t
@@ -39,7 +40,7 @@ H = system.build_hamiltonian()
 
 # 5) DEFINE INITIAL STATE |ψ₀⟩ = all spins ↓
 psi0 = np.zeros(2**system.Ns, dtype=np.complex128)
-state_ind = 1
+state_ind = 3822
 psi0[state_ind] = 1.0
 
 # 6) TIME GRID
@@ -47,15 +48,15 @@ T_steps = 101
 times = np.linspace(0.0, 4.0, T_steps)
 
 # 7) COMPUTE ON‐SITE ZZ AUTOCORRELATOR FOR ALL SITES
-corr = system.compute_zz_autocorrelator(psi0, times)
-print("Shape of correlator array:", corr.shape)  # → (N_sites, T_steps)
+sz_evo = system.compute_sz_ev(psi0, times)
+sz_evo = np.real(sz_evo)  # ensure we have real values
+print("Shape of sz expectation value array:", sz_evo.shape)  # → (N_sites, T_steps)
 
 # 8) PREPARE DATA FOR GIF: absolute value + linear color scale
-corr_abs = np.abs(corr)          # shape = (N_sites, T_steps)
-vmin, vmax = corr_abs.min(), corr_abs.max()
+vmin, vmax = sz_evo.min(), sz_evo.max()
 
 # 9) BUILD AND SAVE A GIF OF THE TIME‐EVOLUTION, WITH A “TIME BAR” AT THE BOTTOM
-gif_filename = "time_evolution_L{}_S{}.gif".format(L, state_ind)
+gif_filename = "sz_time_evolution_N{}_S{}_qpxpq.gif".format(N_sites, state_ind)
 if os.path.exists(gif_filename):
     os.remove(gif_filename)
 
@@ -63,7 +64,7 @@ writer = imageio.get_writer(gif_filename, mode="I", duration=0.2)
 
 for t_idx, t_val in tqdm(enumerate(times), total=T_steps, desc="Creating GIF frames"):
     # 1) extract the 2D data slice at index t_idx
-    frame_data = corr_abs[:, t_idx].reshape(L, L)
+    frame_data = sz_evo[:, t_idx].reshape(Ly, Lx)
 
     # 2) set up a 4×4″ figure at 100 dpi → main image will be exactly 1000×1000 px
     fig = plt.figure(figsize=(10, 10), dpi=100)
@@ -74,10 +75,8 @@ for t_idx, t_val in tqdm(enumerate(times), total=T_steps, desc="Creating GIF fra
     # 3) draw the main |C_{jj}(t)| image
     im = main_ax.imshow(
         frame_data,
-        #vmin=vmin,
-        #vmax=vmax,
-        vmin=0.0,
-        vmax=1.0,
+        vmin=vmin,
+        vmax=vmax,
         cmap="viridis",
         interpolation="none"
     )
