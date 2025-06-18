@@ -2,20 +2,23 @@ import os, io, imageio
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from hamiltonian_wrapper import RydbergLatticeSystem, plt
+from hamiltonian_wrapper import RydbergLatticeSystem, plt, find_random_basis_state_j
 from math import pi
+import random
 
 # ─── 1) DEFINE A SIMPLE 2D LATTICE ──────────────────────────────────────
-Lx, Ly = 13, 1                   
-spacing = 3.73
+Lx, Ly = 3, 3                
+spacing = 5.93
 positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
 N_sites = len(positions)
+mid_site = N_sites // 2  # center site in the grid, works for odd Lx and Ly
+print(mid_site)
 
 h_arr = np.zeros(N_sites)  # no local fields
-Delta_G, Delta_L, C6 = 4*pi*4.91, 0.0, 5.42*(10**6)
+Delta_G, Delta_L, C6 = 125, 0.0, 5.42*(10**6)
 
 def Omega_t(t):
-    return 2.8*pi + 0.0*t
+    return 15.8 + 0.0*t
 
 def phi_t(t):
     return 0.0 + 0.0*t
@@ -38,16 +41,16 @@ system = RydbergLatticeSystem(
 # 4) BUILD THE TIME‐DEPENDENT HAMILTONIAN
 H = system.build_hamiltonian()
 
-# 5) DEFINE INITIAL STATE |ψ₀⟩ = all spins ↓
+# 5) DEFINE INITIAL STATE |ψ₀⟩ = random state with mid-site spin in state up: |↑⟩
 psi0 = np.zeros(2**system.Ns, dtype=np.complex128)
-state_ind = 3822
+state_ind = find_random_basis_state_j(N_sites, mid_site)
 psi0[state_ind] = 1.0
 
 # 6) TIME GRID
 T_steps = 101
 times = np.linspace(0.0, 4.0, T_steps)
 
-# 7) COMPUTE ON‐SITE ZZ AUTOCORRELATOR FOR ALL SITES
+# 7) COMPUTE THE TIME‐EVOLUTION OF THE SPIN‐Z EXPECTATION VALUE FOR ALL SITES
 sz_evo = system.compute_sz_ev(psi0, times)
 sz_evo = np.real(sz_evo)  # ensure we have real values
 print("Shape of sz expectation value array:", sz_evo.shape)  # → (N_sites, T_steps)
@@ -56,7 +59,7 @@ print("Shape of sz expectation value array:", sz_evo.shape)  # → (N_sites, T_s
 vmin, vmax = sz_evo.min(), sz_evo.max()
 
 # 9) BUILD AND SAVE A GIF OF THE TIME‐EVOLUTION, WITH A “TIME BAR” AT THE BOTTOM
-gif_filename = "sz_time_evolution_N{}_S{}_qpxpq.gif".format(N_sites, state_ind)
+gif_filename = "sz_gifs/sz_time_evolution_N{}_S{}.gif".format(N_sites, state_ind)
 if os.path.exists(gif_filename):
     os.remove(gif_filename)
 

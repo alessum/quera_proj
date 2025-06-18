@@ -3,11 +3,11 @@ import numpy as np
 import functools as ft
 
 up, down = np.array([1, 0]), np.array([0, 1])
-list_states = [down]*13
-list_states[0] = up
-list_states[4] = up
-list_states[8] = up
-list_states[12] = up
+list_states = [up]*16
+list_states[0] = down
+list_states[3] = down
+list_states[12] = down
+list_states[15] = down
 
 full_state = ft.reduce(np.kron, list_states)
 

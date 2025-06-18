@@ -6,6 +6,7 @@ from quspin.operators import hamiltonian
 from quspin.basis import spin_basis_1d
 from quspin.tools.measurements import obs_vs_time
 from tqdm import tqdm
+import functools as ft
 
 class RydbergLatticeSystem:
     """
@@ -203,11 +204,15 @@ class RydbergLatticeSystem:
 
         # Pre‐grab basis‐state bit‐patterns (length = 2^N)
         states = basis.states
+        print("states:", states)
 
         for p, j in tqdm(enumerate(sites), desc="Computing ZZ correlators", total=M):
             # Build ±1 diagonal for σ^z_j:
-            bit_j = (states >> j) & 1             # 0 if spin‐j is ↓, 1 if ↑
+            print("p, j:", p, j)
+            bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin‐j is ↓, 1 if ↑
+            print("bit_j;", bit_j)
             sz_vals = 2*bit_j - 1                 # map {0→-1, 1→+1}
+            print("sz_vals:", sz_vals)
 
             # |χ₀⟩ = σ^z_j |ψ₀⟩ is just elementwise multiply by ±1
             chi0 = sz_vals * psi0
@@ -283,6 +288,38 @@ class RydbergLatticeSystem:
 
         return sz_ev
 
+def find_random_basis_state_j(N, j):
+    """
+    Find a random computational basis state index with spin j flipped to ↑.
 
+    Arguments:
+    ----------
+    N : int
+        Total number of spins.
+    j : int
+        Index of the spin to flip to ↑.
+
+    Returns:
+    --------
+    state_index : ndarray, shape (2**N,)
+        The computational basis state with spin j set to ↑.
+    """
+    up, down = np.array([1, 0]), np.array([0, 1])
+    list_states = []                # Creating a list where states are randomly set to up or down
+    for k in range(N):
+        if k == j:
+            list_states.append(up)
+        else:
+            randint = np.random.randint(0, 2)
+            if randint == 0:
+                list_states.append(down)
+            else:
+                list_states.append(up)
+    full_state = ft.reduce(np.kron, list_states)        # Full state
+    print(list_states)
+    nonzero_indices = np.nonzero(full_state)[0]         
+    if len(nonzero_indices) == 0:
+        raise ValueError("No non-zero index found. Check the input parameters.")
+    return nonzero_indices[0]
     
 

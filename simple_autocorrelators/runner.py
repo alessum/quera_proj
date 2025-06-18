@@ -2,13 +2,15 @@ import os, io, imageio
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from hamiltonian_wrapper import RydbergLatticeSystem, plt
+from hamiltonian_wrapper import RydbergLatticeSystem, plt, find_random_basis_state_j
+import pandas as pd
 
 # ─── 1) DEFINE A SIMPLE 2D LATTICE ──────────────────────────────────────
 L = 3                    # 3×3 grid → 9 sites
 spacing = 6.65
 positions = [(i * spacing, j * spacing) for i in range(L) for j in range(L)]
 N_sites = len(positions)
+mid_site = N_sites // 2  # center site in the grid, works for odd L
 
 h_arr = np.zeros(N_sites)  # no local fields
 Delta_G, Delta_L, C6 = 125, 0.0, 5.42*(10**6)
@@ -39,20 +41,25 @@ H = system.build_hamiltonian()
 
 # 5) DEFINE INITIAL STATE |ψ₀⟩ = all spins ↓
 psi0 = np.zeros(2**system.Ns, dtype=np.complex128)
-state_ind = 1
+state_ind = find_random_basis_state_j(N_sites, mid_site)
 psi0[state_ind] = 1.0
 
 # 6) TIME GRID
-T_steps = 101
+T_steps = 3
 times = np.linspace(0.0, 4.0, T_steps)
 
 # 7) COMPUTE ON‐SITE ZZ AUTOCORRELATOR FOR ALL SITES
-corr = system.compute_zz_autocorrelator(psi0, times)
+corr = system.compute_zz_autocorrelator(psi0, times, sites=[mid_site])
 print("Shape of correlator array:", corr.shape)  # → (N_sites, T_steps)
 
 # 8) PREPARE DATA FOR GIF: absolute value + linear color scale
-corr_abs = np.abs(corr)          # shape = (N_sites, T_steps)
+corr_abs = np.real(corr)          # shape = (N_sites, T_steps). # removed the abs and replaced with real part
 vmin, vmax = corr_abs.min(), corr_abs.max()
+
+# Saving data to csv file
+corr_df = pd.DataFrame(corr_abs, columns=times, index=[f"Site {i}" for i in range(N_sites)])
+csv_filename = "correlator_data_L{}_S{}.csv".format(L, state_ind)
+corr_df.to_csv(csv_filename)
 
 # 9) BUILD AND SAVE A GIF OF THE TIME‐EVOLUTION, WITH A “TIME BAR” AT THE BOTTOM
 gif_filename = "time_evolution_L{}_S{}.gif".format(L, state_ind)
@@ -74,10 +81,8 @@ for t_idx, t_val in tqdm(enumerate(times), total=T_steps, desc="Creating GIF fra
     # 3) draw the main |C_{jj}(t)| image
     im = main_ax.imshow(
         frame_data,
-        #vmin=vmin,
-        #vmax=vmax,
-        vmin=0.0,
-        vmax=1.0,
+        vmin=vmin,
+        vmax=vmax,
         cmap="viridis",
         interpolation="none"
     )
@@ -124,4 +129,4 @@ for t_idx, t_val in tqdm(enumerate(times), total=T_steps, desc="Creating GIF fra
     writer.append_data(frame)
 
 writer.close()
-print(f"Wrote GIF to {gif_filename}")
+# print(f"Wrote GIF to {gif_filename}")
