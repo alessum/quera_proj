@@ -5,13 +5,13 @@ from tqdm import tqdm
 from hamiltonian_wrapper import RydbergLatticeSystem, plt, find_random_basis_state_j
 
 # ─── 1) DEFINE A SIMPLE 2D LATTICE ──────────────────────────────────────
-L = 4                    # 3×3 grid → 9 sites
-spacing = 6.65
-positions = [(i * spacing, j * spacing) for i in range(L) for j in range(L)]
+Lx, Ly = 3, 3                    # 3×3 grid → 9 sites
+spacing = 5.93
+positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
 N_sites = len(positions)
 #mid_site = N_sites // 2  # center site in the grid, works for odd L
-mid_site = 5  # starting from the first site, can be changed to any other site
-N_trials = 10
+mid_site = 4  # starting from the first site, can be changed to any other site
+N_trials = 100
 T_total, T_steps = 4.0, 400
 
 h_arr = np.zeros(N_sites)  # no local fields
@@ -56,5 +56,5 @@ for trial in tqdm(range(N_trials), desc="Running trials"):
     corr_abs = np.real(corr)          # shape = (N_sites, T_steps). # removed the abs and replaced with real part
 
     # 9) Saving data to csv file
-    csv_filename = "ac_results/correlator_data_L{}_trial{}.csv".format(L, trial)
+    csv_filename = "ac_results/correlator_data_Lx{}_Ly{}_trial{}.csv".format(Lx, Ly, trial)
     np.savetxt(csv_filename, corr_abs, delimiter=",")

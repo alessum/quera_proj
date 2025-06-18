@@ -204,15 +204,11 @@ class RydbergLatticeSystem:
 
         # Pre‐grab basis‐state bit‐patterns (length = 2^N)
         states = basis.states
-        print("states:", states)
 
         for p, j in tqdm(enumerate(sites), desc="Computing ZZ correlators", total=M):
             # Build ±1 diagonal for σ^z_j:
-            print("p, j:", p, j)
             bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin‐j is ↓, 1 if ↑
-            print("bit_j;", bit_j)
             sz_vals = 2*bit_j - 1                 # map {0→-1, 1→+1}
-            print("sz_vals:", sz_vals)
 
             # |χ₀⟩ = σ^z_j |ψ₀⟩ is just elementwise multiply by ±1
             chi0 = sz_vals * psi0
@@ -316,7 +312,6 @@ def find_random_basis_state_j(N, j):
             else:
                 list_states.append(up)
     full_state = ft.reduce(np.kron, list_states)        # Full state
-    print(list_states)
     nonzero_indices = np.nonzero(full_state)[0]         
     if len(nonzero_indices) == 0:
         raise ValueError("No non-zero index found. Check the input parameters.")
