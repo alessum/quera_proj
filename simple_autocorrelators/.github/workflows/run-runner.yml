@@ -1,0 +1,68 @@
+name: Run & Commit Rydberg Simulations
+
+on:
+  workflow_dispatch:
+    inputs:
+      circuit_to_run:
+        description: Circuit index (integer)
+        required: true
+        type: number
+      number_of_circuits:
+        description: How many circuits to run (integer)
+        default: 10
+        type: number
+      theta_to_run:
+        description: Theta to run (float)
+        default: 0.0
+        type: number
+      time_to_run:
+        description: Time to run (integer)
+        default: 1000
+        type: number
+
+permissions:
+  contents: write
+
+jobs:
+  simulate-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            numba==0.56.4 \
+            scipy==1.13.1 \
+            numpy==1.23.0 \
+            tqdm \
+            sympy \
+            imageio
+
+      - name: Make launcher executable
+        run: chmod +x ./scripts/launch_simulations.sh
+
+      - name: Run launcher
+        id: run
+        run: |
+          ./scripts/launch_simulations.sh \
+            ${{ github.event.inputs.circuit_to_run }} \
+            ${{ github.event.inputs.number_of_circuits }} \
+            ${{ github.event.inputs.theta_to_run }} \
+            ${{ github.event.inputs.time_to_run }}
+
+      - name: Upload all results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rydberg-simulation-results
+          path: results/
+
+          

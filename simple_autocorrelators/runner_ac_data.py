@@ -1,60 +1,73 @@
-import os, io, imageio
+import os
+import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
-from hamiltonian_wrapper import RydbergLatticeSystem, plt, find_random_basis_state_j
+from hamiltonian_wrapper import RydbergLatticeSystem
 
-# ─── 1) DEFINE A SIMPLE 2D LATTICE ──────────────────────────────────────
-Lx, Ly = 3, 3                    # 3×3 grid → 9 sites
+# Define lattice
+Lx, Ly = 3, 3
 spacing = 5.93
 positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
 N_sites = len(positions)
-#mid_site = N_sites // 2  # center site in the grid, works for odd L
-mid_site = 4  # starting from the first site, can be changed to any other site
-N_trials = 100
-T_total, T_steps = 4.0, 400
 
-h_arr = np.zeros(N_sites)  # no local fields
-Delta_G, Delta_L, C6 = 125, 0.0, 5.42*(10**6)
+# Hamiltonian parameters
+Delta_G, Delta_L, C6 = 125, 0.0, 5.42e6
+T_total = 4.0
 
-def Omega_t(t):
-    return 15.8 + 0.0*t
+# Time-dependent drives
+def Omega_t(t): return 15.8 + 0.0 * t
+def phi_t(t): return 0.0 + 0.0 * t
 
-def phi_t(t):
-    return 0.0 + 0.0*t
-
-# 2) INSTANTIATE THE SYSTEM
+# Build system
 system = RydbergLatticeSystem(
     positions=positions,
-    h=h_arr,
+    h=np.zeros(N_sites),
     Delta_G=Delta_G,
     Delta_L=Delta_L,
     C6=C6,
     Omega_t=Omega_t,
     phi_t=phi_t,
 )
-
-# 3) plot the lattice geometry
-# fig, ax = system.plot_lattice()
-# plt.show()
-
-# 4) BUILD THE TIME‐DEPENDENT HAMILTONIAN
 H = system.build_hamiltonian()
 
-for trial in tqdm(range(N_trials), desc="Running trials"):
-    # 5) DEFINE INITIAL STATE |ψ₀⟩ = all spins ↓
-    psi0 = np.zeros(2**system.Ns, dtype=np.complex128)
-    state_ind = find_random_basis_state_j(N_sites, mid_site)
-    psi0[state_ind] = 1.0
+# Parse arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--bitstring-file', help='File with lines: <circuit-id> <bitstring>')
+parser.add_argument('--theta_to_run', type=float, default=0.0)
+parser.add_argument('--time_to_run', type=int, default=1000)
+parser.add_argument('--output-dir', required=True)
+args = parser.parse_args()
 
-    # 6) TIME GRID
-    T_steps = 200
-    times = np.linspace(0.0, T_total, T_steps)
+# Read bitstrings
+entries = []
+with open(args.bitstring_file) as f:
+    for line in f:
+        cid, bs = line.strip().split()
+        entries.append((int(cid), bs))
 
-    # 7) COMPUTE ON‐SITE ZZ AUTOCORRELATOR FOR MID SITE
-    corr = system.compute_zz_autocorrelator(psi0, times, sites=[mid_site])
-    corr_abs = np.real(corr)          # shape = (N_sites, T_steps). # removed the abs and replaced with real part
+# Time grid
+T_steps = 200
+times = np.linspace(0.0, T_total, T_steps)
 
-    # 9) Saving data to csv file
-    csv_filename = "ac_results/correlator_data_Lx{}_Ly{}_trial{}.csv".format(Lx, Ly, trial)
-    np.savetxt(csv_filename, corr_abs, delimiter=",")
+# Process each entry
+for circuit_id, bitstring in entries:
+    if len(bitstring) != N_sites:
+        raise ValueError(f"Expected bitstring length {N_sites}, got {len(bitstring)}")
+
+    # Build psi0
+    up = np.array([1, 0])
+    down = np.array([0, 1])
+    state_vectors = [up if ch=='1' else down for ch in bitstring]
+    psi0 = state_vectors[0]
+    for vec in state_vectors[1:]:
+        psi0 = np.kron(psi0, vec)
+
+    # Compute correlator\    
+    corr = system.compute_zz_autocorrelator(psi0, times, sites=[bitstring.index('1')])
+    corr_real = np.real(corr)
+
+    # Save CSV
+    out_dir = os.path.join(args.output_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    fn = os.path.join(out_dir, f"correlator_L{Lx}_Ly{Ly}_circuit{circuit_id}.csv")
+    np.savetxt(fn, corr_real, delimiter=',')
