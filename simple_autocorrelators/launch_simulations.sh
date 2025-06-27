@@ -1,64 +1,59 @@
+# scripts/launch_simulations.sh
 #!/usr/bin/env bash
 set -euo pipefail
 
 # Inputs
-start_index=$1
-count=$2
-theta=$3
-T_run=$4
+# Usage: launch_simulations.sh <start_index> <count> <theta> <T_run> [mid_site] [Lx] [Ly]
+start_index=${1:-0}
+count=${2:-0}
+T_run=${4:-0}
+mid_site_arg=${5:-}
+Lx_arg=${6:-}
+Ly_arg=${7:-}
+
+# Defaults
+Lx=${Lx_arg:-3}
+Ly=${Ly_arg:-3}
+N_sites=$((Lx * Ly))
+# Default mid_site to center if not provided
+mid_site=${mid_site_arg:-$((N_sites/2))}
+
 batch_size=50
 
-# System parameters
-Lx=3
-Ly=3
-N_SITES=$((Lx * Ly))
-mid_site=4               # fixed central site index
-
 # Prepare base output directory
-base_out_dir="results/U1/T${T_run}/theta$(printf '%.2f' "$theta")"
+base_out_dir="results/L${Lx}/T${T_run}/${mid_site}/"
 mkdir -p "$base_out_dir"
 
-# Determine end index
-end_index=$((start_index + count - 1))
-echo "Processing circuits $start_index..$end_index in batches of $batch_size"
+echo "Processing all bitstrings for Lx=$Lx, Ly=$Ly (mid_site=$mid_site) in batches of $batch_size"
 
-# Total combinations with mid_site forced to '1'
-# There are 2^(N_SITES-1) possible bitstrings
-# Use lex order of integers skipping those with mid bit == 0
-total=$((1 << (N_SITES - 1)))
+# Total valid combinations where bit d == '1'
+total=$((1 << (N_sites-1)))
 
-# Iterate in batches
+# Enumerate in batches
 for (( batch_start=0; batch_start<total; batch_start+=batch_size )); do
   batch_end=$(( batch_start + batch_size - 1 ))
-  if (( batch_end >= total )); then batch_end=$((total - 1)); fi
+  if (( batch_end >= total )); then batch_end=$(( total - 1 )); fi
 
-  # Generate bitstring file with sorted lex indices
+  # Create a temp file listing circuit_id + bitstring for this batch
   bs_file=$(mktemp)
+  trap 'rm -f "$bs_file"' EXIT
   echo "Generating bitstrings indices $batch_start..$batch_end"
   python3 - <<EOF > "$bs_file"
-import sys, itertools
-N = $N_SITES
+import itertools
+N = $N_sites
 d = $mid_site
-start, end = $batch_start, $batch_end
-i = 0
-for bits in itertools.product('01', repeat=N):
-    if bits[d] != '1': continue
-    if i < start or i > end:
-        i += 1
-        continue
-    bs = ''.join(bits)
-    print(i, bs)
-    i += 1
-if i <= end:
-    print("Warning: fewer combinations than requested range", file=sys.stderr)
+valid = [''.join(bits) for bits in itertools.product('01', repeat=N) if bits[d]=='1']
+for idx, bs in enumerate(valid[$batch_start:$((batch_end+1))], start=$batch_start):
+    print(idx, bs)
 EOF
 
-  # Run runner in batch mode
-  python runnerU1_pure.py \
+  # Run simulations for this batch
+  python runner_ac_data.py \
     --bitstring-file "$bs_file" \
-    --theta_to_run "$theta" \
     --time_to_run "$T_run" \
     --output-dir "$base_out_dir"
 
-  rm "$bs_file"
+  rm -f "$bs_file"
+  trap - EXIT
+
 done
