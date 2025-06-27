@@ -28,6 +28,9 @@ on:
         default: 3
         type: number
 
+permissions:
+  contents: write
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -39,28 +42,27 @@ jobs:
       - name: Calculate batch-matrix
         id: make-matrix
         run: |
-          # Read dispatch inputs directly
+          # read dispatch inputs
           N=${{ github.event.inputs.number_of_circuits }}
           b=${{ github.event.inputs.batch_size }}
 
-          # Compute number of batches (ceiling)
+          # compute number of batches (ceiling division)
           M=$(( (N + b - 1) / b ))
 
-          # Build a JSON array: [{"batch_index":0}, {"batch_index":1}, …]
-          echo "[" > matrix.json
-          for i in $(seq 0 $((M-1))); do
-            printf '{"batch_index": %d}' "$i" >> matrix.json
-            # comma except after last
-            if [ "$i" -lt $((M-1)) ]; then
-              echo "," >> matrix.json
-            else
-              echo ""  >> matrix.json
+          # build JSON array: [{"batch_index":0}, {"batch_index":1}, …]
+          json="["
+          for i in $(seq 0 $((M - 1))); do
+            json+="{\"batch_index\":$i}"
+            if [ "$i" -lt $((M - 1)) ]; then
+              json+=","
             fi
           done
-          echo "]" >> matrix.json
+          json+="]"
 
-          # Expose JSON as the matrix output
-          echo "::set-output name=matrix::$(cat matrix.json)"
+          echo "Generated matrix JSON: $json"
+
+          # export to $GITHUB_OUTPUT for downstream
+          echo "matrix=$json" >> $GITHUB_OUTPUT
 
   run-batch:
     needs: prepare
@@ -91,7 +93,7 @@ jobs:
             --batch_index    "${{ matrix.batch_index }}" \
             --runner-script  simple_autocorrelators/runner_ac_data.py
 
-      - name: Upload batch‐specific results
+      - name: Upload batch-specific results
         uses: actions/upload-artifact@v4
         with:
           name: rydberg-results-batch-${{ matrix.batch_index }}
