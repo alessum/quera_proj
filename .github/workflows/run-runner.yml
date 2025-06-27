@@ -36,16 +36,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Calculate batch‐matrix
+      - name: Calculate batch-matrix
         id: make-matrix
         run: |
-          python3 - << 'EOF' > matrix.json
-          import math, json, os
-          N = int(os.environ["INPUT_NUMBER_OF_CIRCUITS"])
-          b = int(os.environ["INPUT_BATCH_SIZE"])
-          M = math.ceil(N / b)
-          print(json.dumps([{"batch_index": i} for i in range(M)]))
-          EOF
+          # Read dispatch inputs directly
+          N=${{ github.event.inputs.number_of_circuits }}
+          b=${{ github.event.inputs.batch_size }}
+
+          # Compute number of batches (ceiling)
+          M=$(( (N + b - 1) / b ))
+
+          # Build a JSON array: [{"batch_index":0}, {"batch_index":1}, …]
+          echo "[" > matrix.json
+          for i in $(seq 0 $((M-1))); do
+            printf '{"batch_index": %d}' "$i" >> matrix.json
+            # comma except after last
+            if [ "$i" -lt $((M-1)) ]; then
+              echo "," >> matrix.json
+            else
+              echo ""  >> matrix.json
+            fi
+          done
+          echo "]" >> matrix.json
+
+          # Expose JSON as the matrix output
           echo "::set-output name=matrix::$(cat matrix.json)"
 
   run-batch:
