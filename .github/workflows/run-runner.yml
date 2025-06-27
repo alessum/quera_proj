@@ -32,11 +32,12 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.gen.outputs.matrix }}
+      matrix: ${{ steps.make-matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - name: Calculate batch indexes
-        id: gen
+
+      - name: Calculate batch‐matrix
+        id: make-matrix
         run: |
           python3 - << 'EOF' > matrix.json
           import math, json, os
@@ -55,14 +56,17 @@ jobs:
         include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python 3.9
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+
       - name: Install dependencies
         run: |
           pip install quspin numpy scipy tqdm sympy imageio
-      - name: Run batch ${{ matrix.batch_index }}
+
+      - name: Run batch #${{ matrix.batch_index }}
         run: |
           python simple_autocorrelators/launch_one_batch.py \
             --time           "${{ github.event.inputs.time_to_run }}" \
@@ -70,8 +74,10 @@ jobs:
             --Lx             "${{ github.event.inputs.Lx }}" \
             --Ly             "${{ github.event.inputs.Ly }}" \
             --batch_size     "${{ github.event.inputs.batch_size }}" \
-            --batch_index    "${{ matrix.batch_index }}"
-      - name: Upload batch-specific results
+            --batch_index    "${{ matrix.batch_index }}" \
+            --runner-script  simple_autocorrelators/runner_ac_data.py
+
+      - name: Upload batch‐specific results
         uses: actions/upload-artifact@v4
         with:
           name: rydberg-results-batch-${{ matrix.batch_index }}
