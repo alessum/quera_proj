@@ -22,10 +22,10 @@ fi
 
 NUMBER_OF_CIRCUITS=$1
 BATCH_SIZE=$2
-TIME_TO_RUN=$10
-MID_SITE=$2
-LX=$2
-LY=$2
+TIME_TO_RUN=$3
+MID_SITE=$4
+LX=$5
+LY=$6
 
 WORKFLOW_FILE="run-runner.yml"   # name under .github/workflows/
 
