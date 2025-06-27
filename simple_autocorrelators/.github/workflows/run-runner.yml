@@ -1,0 +1,78 @@
+name: Parallel Rydberg Simulations
+
+on:
+  workflow_dispatch:
+    inputs:
+      number_of_circuits:
+        description: Total circuits to run
+        default: 100
+        type: number
+      batch_size:
+        description: States per batch
+        default: 10
+        type: number
+      time_to_run:
+        description: Time to run
+        default: 1000
+        type: number
+      mid_site:
+        description: Index of central site
+        default: 4
+        type: number
+      Lx:
+        description: Lx dimension
+        default: 3
+        type: number
+      Ly:
+        description: Ly dimension
+        default: 3
+        type: number
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Calculate batch indexes
+        id: gen
+        run: |
+          python3 - << 'EOF' > matrix.json
+          import math, json, os
+          N = int(os.environ["INPUT_NUMBER_OF_CIRCUITS"])
+          b = int(os.environ["INPUT_BATCH_SIZE"])
+          M = math.ceil(N / b)
+          print(json.dumps([{"batch_index": i} for i in range(M)]))
+          EOF
+          echo "::set-output name=matrix::$(cat matrix.json)"
+
+  run-batch:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: |
+          pip install quspin numpy scipy tqdm sympy imageio
+      - name: Run batch ${{ matrix.batch_index }}
+        run: |
+          python simple_autocorrelators/launch_one_batch.py \
+            --time           "${{ github.event.inputs.time_to_run }}" \
+            --mid_site       "${{ github.event.inputs.mid_site }}" \
+            --Lx             "${{ github.event.inputs.Lx }}" \
+            --Ly             "${{ github.event.inputs.Ly }}" \
+            --batch_size     "${{ github.event.inputs.batch_size }}" \
+            --batch_index    "${{ matrix.batch_index }}"
+      - name: Upload batch-specific results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rydberg-results-batch-${{ matrix.batch_index }}
+          path: results/

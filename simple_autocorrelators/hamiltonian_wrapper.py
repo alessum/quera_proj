@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from quspin.operators import hamiltonian
 from quspin.basis import spin_basis_1d
+from quspin.tools.measurements import obs_vs_time
 from tqdm import tqdm
-
+import functools as ft
 
 class RydbergLatticeSystem:
     """
@@ -18,7 +19,7 @@ class RydbergLatticeSystem:
       - compute_zz_autocorrelator(): computes C_{jj}(t) = ⟨σ^z_j(t) σ^z_j(0)⟩.
     """
 
-    def __init__(self, positions, kappa, h, Delta_G, Delta_L, C6, Omega_t, phi_t):
+    def __init__(self, positions, h, Delta_G, Delta_L, C6, Omega_t, phi_t):
         """
         Initialize the Rydberg lattice.
 
@@ -39,7 +40,6 @@ class RydbergLatticeSystem:
         """
         self.positions = np.array(positions, dtype=float)  # shape = (N, 2)
         self.Ns = len(positions)
-        self.kappa = np.array(kappa, dtype=float)
         self.h = np.array(h, dtype=float)
         self.Delta_G = float(Delta_G)
         self.Delta_L = float(Delta_L)
@@ -58,7 +58,7 @@ class RydbergLatticeSystem:
                 dij = np.linalg.norm(coords[i] - coords[j])
                 self.rmat[i, j] = dij
                 self.rmat[j, i] = dij
-
+        
         self.H = None
 
     def build_hamiltonian(self):
@@ -73,10 +73,17 @@ class RydbergLatticeSystem:
           2) Dynamic drive:
              Ω(t)/2 e^{+iφ(t)} ∑_j σ^-_j  +  Ω(t)/2 e^{−iφ(t)} ∑_j σ^+_j
         """
-        Ns, kappa, h_arr = self.Ns, self.kappa, self.h
+        Ns, h_arr = self.Ns, self.h
         ΔG, ΔL, C6 = self.Delta_G, self.Delta_L, self.C6
         Omega_t, phi_t = self.Omega_t, self.phi_t
         basis, rmat = self.basis, self.rmat
+
+        # Precomputing the kappa terms
+        kappa = np.zeros(Ns, dtype=float)
+        for j in range(Ns):
+            for k in range(Ns):
+                if j != k:
+                    kappa[j] += C6 / (2.0 * (rmat[j, k] ** 6))
 
         # 1) STATIC TERMS
         static_list = []
@@ -200,7 +207,7 @@ class RydbergLatticeSystem:
 
         for p, j in tqdm(enumerate(sites), desc="Computing ZZ correlators", total=M):
             # Build ±1 diagonal for σ^z_j:
-            bit_j = (states >> j) & 1             # 0 if spin‐j is ↓, 1 if ↑
+            bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin‐j is ↓, 1 if ↑
             sz_vals = 2*bit_j - 1                 # map {0→-1, 1→+1}
 
             # |χ₀⟩ = σ^z_j |ψ₀⟩ is just elementwise multiply by ±1
@@ -216,3 +223,98 @@ class RydbergLatticeSystem:
                 corr[p, n] = np.vdot(psi_n, sz_chi)
 
         return corr
+    
+    def compute_sz_ev(self, psi0, times, sites=None, atol=1e-9, rtol=1e-7):
+        """
+        Compute the expectation value of σ^z_j(t) for each site j at times t:
+        <σ^z_j(t)> = ⟨ψ₀ | σ^z_j(t) | ψ₀⟩.
+
+        Arguments:
+        ----------
+        psi0 : ndarray, shape (2^N,)
+            Initial state |ψ(0)> (normalized).
+        times : array_like of floats
+            Times at which to compute C_{jj}(t).
+        sites : sequence of int, optional
+            If None, computes for all j = 0..N_s−1.
+        atol, rtol : float
+            Tolerances for the ODE solver.
+
+        Returns:
+        --------
+        sz_ev : ndarray, shape (len(sites), len(times))
+        sz_ev[p, n] = <σ^z_{j_p}(t_n)> for each site j_p.
+        """
+        if self.H is None:
+            raise RuntimeError("Call build_hamiltonian() before computing correlators.")
+
+        basis = self.H.basis
+        N_s = basis.L
+        if sites is None:
+            sites = list(range(N_s))
+        else:
+            sites = list(sites)
+
+        T = len(times)
+        M = len(sites)
+        sz_ev = np.zeros((M, T), dtype=np.complex128)
+
+        # Evolve |ψ₀⟩ under H(t): shape = (2^N, T)
+        psi_t = self.H.evolve(psi0, 0.0, times, atol=atol, rtol=rtol)
+
+        # Creating all possible local Sz operators:
+        Sz_dict = {}
+        """
+        for j in range(N_s):
+            # Build ±1 diagonal for σ^z_j:
+            sz_list = [0]* self.Ns
+            sz_list[j] = 1
+            new_H, new_key = hamiltonian(sz_list, [], basis=basis, dtype=np.complex128), "sz_{}".format(j)
+            Sz_dict[new_key] = new_H
+        """
+        for j in range(N_s):
+            sz_term = [ [1.0, j] ]  # coefficient 1.0 at site j
+            new_H = hamiltonian([("z", sz_term)], [], basis=basis, dtype=np.complex128)
+            Sz_dict[f"sz_{j}"] = new_H
+
+        sz_v_time = obs_vs_time(psi_t, times, Sz_dict, enforce_pure= True)
+        sz_ev = np.zeros((M, T), dtype=np.complex128)
+        for j in range(M):
+            sz_ev[j, :] = sz_v_time["sz_{}".format(sites[j])]
+
+        return sz_ev
+
+def find_random_basis_state_j(N, j):
+    """
+    Find a random computational basis state index with spin j flipped to ↑.
+
+    Arguments:
+    ----------
+    N : int
+        Total number of spins.
+    j : int
+        Index of the spin to flip to ↑.
+
+    Returns:
+    --------
+    state_index : ndarray, shape (2**N,)
+        The computational basis state with spin j set to ↑.
+    """
+    up, down = np.array([1, 0]), np.array([0, 1])
+    list_states = []                # Creating a list where states are randomly set to up or down
+    for k in range(N):
+        if k == j:
+            list_states.append(up)
+        else:
+            randint = np.random.randint(0, 2)
+            if randint == 0:
+                list_states.append(down)
+            else:
+                list_states.append(up)
+    full_state = ft.reduce(np.kron, list_states)        # Full state
+    nonzero_indices = np.nonzero(full_state)[0]         
+    if len(nonzero_indices) == 0:
+        raise ValueError("No non-zero index found. Check the input parameters.")
+    return nonzero_indices[0]
+    
+
