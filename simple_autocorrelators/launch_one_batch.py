@@ -15,6 +15,7 @@ def main():
 
     # total sites and all valid bitstrings:
     N = args.Lx * args.Ly
+    print(f"[DEBUG] Lx={args.Lx}, Ly={args.Ly} → N_sites={N}")
     valid = [
         ''.join(bits)
         for bits in itertools.product('01', repeat=N)
@@ -29,15 +30,21 @@ def main():
         for idx in range(start, end+1):
             tmp.write(f"{idx} {valid[idx]}\n")
         tmp_path = tmp.name
+    
+    print(f"[DEBUG] Generated bitstring length = {len(valid[0])}")
+    assert args.mid_site < N, "[DEBUG] mid_site must be less than N_sites"
 
     print(f"[batch {args.batch_index}] indices {start}..{end}")
     subprocess.run([
         sys.executable, args.runner_script,
         '--bitstring-file', tmp_path,
-        '--time_to_run',     str(args.time)
+        '--time_to_run',     str(args.time),
+        '--Lx',              str(args.Lx),
+        '--Ly',              str(args.Ly),
     ], check=True)
 
     os.remove(tmp_path)
+
 
 if __name__=='__main__':
     main()

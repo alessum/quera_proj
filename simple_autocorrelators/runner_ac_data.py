@@ -6,16 +6,20 @@ from hamiltonian_wrapper import RydbergLatticeSystem
 
 # Parse arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--bitstring-file', required=True,
-                    help='File with lines: <circuit-id> <bitstring>')
+parser.add_argument('--bitstring-file', required=True)
 parser.add_argument('--time_to_run', type=int, default=1000)
+parser.add_argument('--Lx', type=int,   default=3,
+                    help='Number of sites along x')
+parser.add_argument('--Ly', type=int,   default=3,
+                    help='Number of sites along y')
 args = parser.parse_args()
 
-# Lattice parameters
-Lx, Ly = 3, 3
-spacing = 5.93
-positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
+Lx, Ly = args.Lx, args.Ly
+spacing   = 5.93
+positions = [(i * spacing, j * spacing)
+             for i in range(Lx) for j in range(Ly)]
 N_sites = len(positions)
+
 
 # Hamiltonian parameters
 delta_G, delta_L, C6 = 125, 0.0, 5.42e6

@@ -10,3 +10,4 @@ Project.toml
 populations.csv
 check.ipynb
 ac_results
+tmp_fetch
