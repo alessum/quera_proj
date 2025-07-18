@@ -67,6 +67,7 @@ jobs:
   run-batch:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 150
     strategy:
       matrix:
         include: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -98,6 +99,7 @@ jobs:
           echo "================================"
 
       - name: Run batch #${{ matrix.batch_index }}
+        timeout-minutes: 150
         run: |
           python simple_autocorrelators/launch_one_batch.py \
             --time           "${{ github.event.inputs.time_to_run }}" \

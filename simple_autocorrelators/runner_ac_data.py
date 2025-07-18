@@ -72,9 +72,10 @@ for i, (cid, bitstring) in enumerate(entries):
     up = np.array([1, 0])
     down = np.array([0, 1])
     state_vectors = [up if ch=='1' else down for ch in bitstring]
+    # This creates the full quantum state vector
     psi0 = state_vectors[0]
     for vec in state_vectors[1:]:
-        psi0 = np.kron(psi0, vec)
+        psi0 = np.kron(psi0, vec)  # Creates 2^25 dimensional vector!
 
     print(f"[DEBUG] Initial state built, norm: {np.linalg.norm(psi0):.6f}")
 
