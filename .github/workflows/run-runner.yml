@@ -82,6 +82,21 @@ jobs:
         run: |
           pip install quspin numpy scipy tqdm sympy imageio
 
+      - name: Check memory before
+        run: free -m
+
+      - name: Debug - Show input parameters
+        run: |
+          echo "=== DEBUG: Input Parameters ==="
+          echo "number_of_circuits: ${{ github.event.inputs.number_of_circuits }}"
+          echo "batch_size: ${{ github.event.inputs.batch_size }}"
+          echo "time_to_run: ${{ github.event.inputs.time_to_run }}"
+          echo "mid_site: ${{ github.event.inputs.mid_site }}"
+          echo "Lx: ${{ github.event.inputs.Lx }}"
+          echo "Ly: ${{ github.event.inputs.Ly }}"
+          echo "batch_index: ${{ matrix.batch_index }}"
+          echo "================================"
+
       - name: Run batch #${{ matrix.batch_index }}
         run: |
           python simple_autocorrelators/launch_one_batch.py \
@@ -92,6 +107,18 @@ jobs:
             --batch_size     "${{ github.event.inputs.batch_size }}" \
             --batch_index    "${{ matrix.batch_index }}" \
             --runner-script  simple_autocorrelators/runner_ac_data.py
+
+      - name: Debug - Check output files
+        run: |
+          echo "=== DEBUG: Output Directory Contents ==="
+          find results/ -type f -name "*.csv" | head -10
+          echo "Total CSV files: $(find results/ -name "*.csv" | wc -l)"
+          echo "Directory structure:"
+          ls -la results/ || echo "No results directory found"
+          echo "========================================"
+
+      - name: Check memory after
+        run: free -m
 
       - name: Upload batch-specific results
         uses: actions/upload-artifact@v4
