@@ -99,7 +99,7 @@ def main():
             '--time_to_run',     str(args.time),
             '--Lx',              str(args.Lx),
             '--Ly',              str(args.Ly),
-        ], check=True, capture_output=True, text=True, timeout=300)  # Reduce to 5 min timeout
+        ], check=True, capture_output=True, text=True, timeout=3000)  # Reduce to 5 min timeout
         
         debug_print(f"[DEBUG] Runner completed successfully")
         if result.stdout:
