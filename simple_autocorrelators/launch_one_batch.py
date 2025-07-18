@@ -99,14 +99,14 @@ def main():
             '--time_to_run',     str(args.time),
             '--Lx',              str(args.Lx),
             '--Ly',              str(args.Ly),
-        ], check=True, capture_output=True, text=True, timeout=3000)  # Reduce to 5 min timeout
+        ], check=True, capture_output=True, text=True, timeout=7200)  # Increased to 2 hours (7200 seconds)
         
         debug_print(f"[DEBUG] Runner completed successfully")
         if result.stdout:
             debug_print(f"[DEBUG] Runner stdout: {result.stdout}")
             
     except subprocess.TimeoutExpired:
-        debug_print(f"[ERROR] Runner timed out after 5 minutes")
+        debug_print(f"[ERROR] Runner timed out after 2 hours")
         raise
     except subprocess.CalledProcessError as e:
         debug_print(f"[ERROR] Runner failed with return code {e.returncode}")
