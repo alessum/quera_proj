@@ -164,7 +164,7 @@ class RydbergLatticeSystem:
         plt.tight_layout()
         return fig, ax
 
-    def compute_zz_autocorrelator(self, psi0, times, sites=None, atol=1e-9, rtol=1e-7):
+    def compute_zz_autocorrelator(self, psi0, times, sites=None, percentage=None, atol=1e-9, rtol=1e-7):
         """
         Compute on‐site ZZ autocorrelator:
           C_{jj}(t) = ⟨ψ₀ | σ^z_j(t) σ^z_j(0) | ψ₀⟩.
@@ -205,7 +205,8 @@ class RydbergLatticeSystem:
         # Pre‐grab basis‐state bit‐patterns (length = 2^N)
         states = basis.states
 
-        for p, j in tqdm(enumerate(sites), desc="Computing ZZ correlators", total=M):
+        for p, j in tqdm(enumerate(sites), 
+                         desc=f"Computing ZZ correlators {percentage:.2f}", total=M):
             # Build ±1 diagonal for σ^z_j:
             bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin‐j is ↓, 1 if ↑
             sz_vals = 2*bit_j - 1                 # map {0→-1, 1→+1}

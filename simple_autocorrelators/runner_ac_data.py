@@ -48,7 +48,7 @@ with open(args.bitstring_file) as f:
         entries.append((int(cid), bs))
 
 # Process each initial state
-for circuit_id, bitstring in entries:
+for cid, bitstring in entries:
     if len(bitstring) != N_sites:
         raise ValueError(f"Expected bitstring length {N_sites}, got {len(bitstring)}")
 
@@ -62,7 +62,7 @@ for circuit_id, bitstring in entries:
 
     # Compute ZZ autocorrelator for the single excited site
     excited_site = bitstring.index('1')
-    corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
+    corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site], percentage=cid/len(entries))
     corr_real = np.real(corr)
 
     # Save result
@@ -70,6 +70,5 @@ for circuit_id, bitstring in entries:
     output_dir = f"results/L{Lx}_Ly{Ly}_T{args.time_to_run}"
     out_dir = os.path.join(output_dir)
     os.makedirs(out_dir, exist_ok=True)
-    fn = os.path.join(out_dir,
-                      f"correlator_circuit{circuit_id}.csv")
+    fn = os.path.join(out_dir, f"correlator_circuit{cid}.csv")
     np.savetxt(fn, corr_real, delimiter=',')

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Path to the folder containing CSV files
-ac_results_folder = '/Users/leonardlogaric/Desktop/quera_proj/ac_results'
+ac_results_folder = os.path.join(os.path.dirname(__file__), 'ac_results')
 print("Looking for CSV files in:", ac_results_folder)
 total_T, T_steps = 2.0, 200
 times = np.linspace(0.0, total_T, T_steps)
