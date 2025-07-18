@@ -27,9 +27,9 @@ debug_print(f"[DEBUG] Arguments: {vars(args)}")
 Lx, Ly = args.Lx, args.Ly
 N_sites = Lx * Ly
 
-if N_sites > 15:
+if N_sites > 25:
     debug_print(f"[ERROR] System too large: {N_sites} sites (2^{N_sites} = {2**N_sites:,} states)")
-    debug_print(f"[ERROR] Maximum recommended: 15 sites")
+    debug_print(f"[ERROR] Maximum recommended: 25 sites")
     sys.exit(1)
 
 debug_print(f"[DEBUG] System size check passed: {N_sites} sites")
