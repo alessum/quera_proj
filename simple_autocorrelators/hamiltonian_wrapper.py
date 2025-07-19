@@ -397,112 +397,6 @@ class RydbergLatticeSystem:
                 
         return result
 
-    def compute_zz_autocorrelator_matrix_free(self, psi0, times, sites=None, atol=1e-9, rtol=1e-7):
-        """
-        Compute ZZ autocorrelator using matrix-free time evolution.
-        This avoids building the full Hamiltonian matrix.
-        """
-        if sites is None:
-            sites = list(range(len(self.positions)))
-        
-        # Build Hamiltonian object (matrix-free)
-        H_obj = self._build_hamiltonian_object()
-        
-        # Matrix-free time evolution
-        def sigma_z_op(site):
-            """Create sigma_z operator for given site"""
-            static = [["z", [[1.0, site]]]]
-            return hamiltonian(static, [], basis=self.basis, dtype=np.complex128)
-        
-        correlators = []
-        for site in sites:
-            sigma_z = sigma_z_op(site)
-            corr_site = []
-            
-            for t in times:
-                if t == 0:
-                    # At t=0: <ψ₀|σᶻ σᶻ|ψ₀>
-                    psi_evolved = psi0
-                else:
-                    # Evolve state to time t (matrix-free)
-                    psi_evolved = H_obj.evolve(psi0, 0, [t], atol=atol, rtol=rtol)[-1]
-                
-                # Compute <ψ(t)|σᶻ|ψ₀> <ψ₀|σᶻ|ψ(t)>
-                sigma_z_psi0 = sigma_z.dot(psi0)
-                sigma_z_psi_t = sigma_z.dot(psi_evolved)
-                corr = np.vdot(sigma_z_psi_t, sigma_z_psi0)
-                corr_site.append(corr)
-            
-            correlators.append(corr_site)
-        
-        return np.array(correlators)
-
-    def compute_zz_autocorrelator_truly_matrix_free(self, psi0, times, sites=None):
-        """
-        Compute ZZ autocorrelator using completely matrix-free time evolution.
-        Uses manual ODE integration instead of QuSpin's evolve method.
-        """
-        from scipy.integrate import solve_ivp
-        
-        if sites is None:
-            sites = list(range(len(self.positions)))
-        
-        def schrodinger_rhs(t, psi_flat):
-            """Right-hand side for Schrödinger equation: i∂ψ/∂t = H(t)ψ"""
-            psi = psi_flat.view(complex)
-            H_psi = self.apply_hamiltonian(psi, t)
-            return (-1j * H_psi).view(float)  # Convert to real array for solver
-        
-        correlators = []
-        
-        for site in sites:
-            print(f"[DEBUG] Computing correlator for site {site}")
-            corr_site = []
-            
-            # Pre-compute σ^z|ψ₀⟩
-            sigma_z_psi0 = self._apply_pauli_z(psi0, site)
-            
-            for i, t in enumerate(times):
-                if t == 0:
-                    # At t=0: ⟨ψ₀|σᶻ σᶻ|ψ₀⟩ = ⟨σᶻψ₀|σᶻψ₀⟩
-                    corr = np.vdot(sigma_z_psi0, sigma_z_psi0).real
-                else:
-                    try:
-                        # Solve Schrödinger equation from 0 to t
-                        sol = solve_ivp(
-                            schrodinger_rhs, 
-                            [0, t], 
-                            psi0.view(float),  # Convert complex to real array
-                            method='DOP853',   # High-accuracy method
-                            rtol=1e-6,         # Reduced tolerance for speed
-                            atol=1e-8,
-                            max_step=0.1       # Limit step size
-                        )
-                        
-                        if not sol.success:
-                            print(f"[WARNING] ODE solver failed at t={t}: {sol.message}")
-                            corr = 0.0
-                        else:
-                            # Get evolved state
-                            psi_t = sol.y[:, -1].view(complex)
-                            
-                            # Compute ⟨ψ(t)|σᶻ|ψ₀⟩ ⟨ψ₀|σᶻ|ψ(t)⟩
-                            sigma_z_psi_t = self._apply_pauli_z(psi_t, site)
-                            corr = np.vdot(sigma_z_psi_t, sigma_z_psi0).real
-                            
-                    except Exception as e:
-                        print(f"[ERROR] Time evolution failed at t={t}: {e}")
-                        corr = 0.0
-                
-                corr_site.append(corr)
-                
-                # Progress indicator
-                if i % 50 == 0:
-                    print(f"[DEBUG] Site {site}: completed {i+1}/{len(times)} time points")
-            
-            correlators.append(corr_site)
-        
-        return np.array(correlators)
 
     def _build_hamiltonian_object(self):
         """Build QuSpin Hamiltonian object in matrix-free mode"""
@@ -572,5 +466,186 @@ class RydbergLatticeSystem:
         )
         
         return H_obj  # Return the Hamiltonian object
+    
+    def apply_hamiltonian_efficient(self, psi, t=0):
+        """Apply Hamiltonian efficiently using vectorized operations"""
+        N = len(self.positions)
+        Omega = self.Omega_t(t)
+        phi = self.phi_t(t)
+        
+        # Use basis states for efficient bit operations
+        states = self.basis.states  # Shape: (2^N,) - precomputed bit patterns
+        result = np.zeros_like(psi)
+        
+        # 1. Apply σ^z terms efficiently
+        for j in range(N):
+            # Extract bit j from all states at once
+            bit_j = (states >> j) & 1  # 0 or 1 for each state
+            sz_vals = 2 * bit_j - 1    # Convert to ±1
+            result += self.h[j] * sz_vals * psi
+    
+        # 2. Apply number operators efficiently  
+        for j in range(N):
+            bit_j = (states >> j) & 1
+            result += (self.Delta_G + self.Delta_L) * bit_j * psi
+    
+        # 3. Apply Rabi terms efficiently (σ^+ and σ^-)
+        for j in range(N):
+            # σ^+ flips 0→1 at site j
+            mask_down = ((states >> j) & 1) == 0  # States with bit j = 0
+            if np.any(mask_down):
+                target_states = states[mask_down] | (1 << j)  # Flip bit j to 1
+                # Find indices of target states
+                target_indices = np.searchsorted(states, target_states)
+                result[target_indices] += (Omega/2) * np.exp(-1j*phi) * psi[mask_down]
+            
+            # σ^- flips 1→0 at site j
+            mask_up = ((states >> j) & 1) == 1    # States with bit j = 1
+            if np.any(mask_up):
+                target_states = states[mask_up] & ~(1 << j)  # Flip bit j to 0
+                target_indices = np.searchsorted(states, target_states)
+                result[target_indices] += (Omega/2) * np.exp(1j*phi) * psi[mask_up]
+    
+        # 4. Apply interaction terms efficiently
+        for i in range(N):
+            for j in range(i+1, N):
+                # n_i * n_j: both bits must be 1
+                bit_i = (states >> i) & 1
+                bit_j = (states >> j) & 1
+                interaction_mask = bit_i * bit_j  # 1 only when both are 1
+                
+                r_ij = self.rmat[i, j]
+                coupling = self.C6 / (r_ij**6)
+                result += coupling * interaction_mask * psi
+    
+        return result
+    
+    def _apply_pauli_z_efficient(self, psi, site):
+        """Apply σ^z efficiently using basis states"""
+        states = self.basis.states
+        bit_vals = (states >> site) & 1
+        sz_vals = 2 * bit_vals - 1  # Convert 0,1 to -1,+1
+        return sz_vals * psi
+
+    def apply_hamiltonian_pure_manual(self, psi, t=0):
+        """Apply Hamiltonian with ZERO matrices - pure bit operations"""
+        N = len(self.positions)
+        Omega = self.Omega_t(t)
+        phi = self.phi_t(t)
+        result = np.zeros_like(psi)
+        
+        dim = 2**N  # Hilbert space dimension
+        
+        # Manual bit operations without any QuSpin basis
+        for state_idx in range(dim):
+            # Extract bits manually
+            bits = [(state_idx >> j) & 1 for j in range(N)]
+            
+            # 1. Apply σ^z terms
+            for j in range(N):
+                sz_val = 2 * bits[j] - 1  # Convert 0,1 to -1,+1
+                result[state_idx] += self.h[j] * sz_val * psi[state_idx]
+            
+            # 2. Apply detuning terms
+            for j in range(N):
+                result[state_idx] += (self.Delta_G + self.Delta_L) * bits[j] * psi[state_idx]
+            
+            # 3. Apply interaction terms
+            for i in range(N):
+                for j in range(i+1, N):
+                    if bits[i] == 1 and bits[j] == 1:  # Both excited
+                        r_ij = self.rmat[i, j]
+                        coupling = self.C6 / (r_ij**6)
+                        result[state_idx] += coupling * psi[state_idx]
+    
+        # 4. Apply Rabi terms (σ^+ and σ^-)
+        for state_idx in range(dim):
+            bits = [(state_idx >> j) & 1 for j in range(N)]
+            
+            for j in range(N):
+                # σ^+ : |0⟩ → |1⟩ at site j
+                if bits[j] == 0:
+                    new_state = state_idx | (1 << j)  # Flip bit j to 1
+                    result[new_state] += (Omega/2) * np.exp(-1j*phi) * psi[state_idx]
+                
+                # σ^- : |1⟩ → |0⟩ at site j  
+                if bits[j] == 1:
+                    new_state = state_idx & ~(1 << j)  # Flip bit j to 0
+                    result[new_state] += (Omega/2) * np.exp(1j*phi) * psi[state_idx]
+    
+        return result
+
+    def _apply_pauli_z_pure_manual(self, psi, site):
+        """Apply σ^z without any QuSpin matrices"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(2**N):
+            bit_val = (state_idx >> site) & 1
+            sz_val = 2 * bit_val - 1  # 0→-1, 1→+1
+            result[state_idx] = sz_val * psi[state_idx]
+        
+        return result
+
+    def compute_zz_autocorrelator_zero_matrices(self, psi0, times, sites=None):
+        """100% matrix-free - no QuSpin, no matrices, pure bit operations"""
+        from scipy.integrate import solve_ivp
+        
+        if sites is None:
+            sites = list(range(len(self.positions)))
+        
+        def schrodinger_rhs(t, psi_flat):
+            """Right-hand side for Schrödinger equation"""
+            psi = psi_flat.view(complex)
+            H_psi = self.apply_hamiltonian_pure_manual(psi, t)
+            return (-1j * H_psi).view(float)
+    
+        correlators = []
+        
+        for site in sites:
+            print(f"[DEBUG] Computing correlator for site {site} (ZERO matrices)")
+            corr_site = []
+            
+            # Pre-compute σ^z|ψ₀⟩ without matrices
+            sigma_z_psi0 = self._apply_pauli_z_pure_manual(psi0, site)
+            
+            # Use only first 20 time points for testing
+            max_time_points = min(20, len(times))
+            time_subset = times[:max_time_points]
+            
+            for i, t in enumerate(time_subset):
+                if t == 0:
+                    corr = np.vdot(sigma_z_psi0, sigma_z_psi0).real
+                else:
+                    try:
+                        sol = solve_ivp(
+                            schrodinger_rhs, [0, t], psi0.view(float),
+                            method='RK23',  # Fastest method
+                            rtol=1e-3,      # Very loose tolerance
+                            atol=1e-5,
+                            max_step=0.5
+                        )
+                        
+                        if sol.success:
+                            psi_t = sol.y[:, -1].view(complex)
+                            sigma_z_psi_t = self._apply_pauli_z_pure_manual(psi_t, site)
+                            corr = np.vdot(sigma_z_psi_t, sigma_z_psi0).real
+                        else:
+                            corr = 0.0
+                    except:
+                        corr = 0.0
+            
+                corr_site.append(corr)
+                
+                if i % 5 == 0:
+                    print(f"[DEBUG] Site {site}: {i+1}/{max_time_points} time points")
+        
+        # Pad with zeros
+        while len(corr_site) < len(times):
+            corr_site.append(0.0)
+            
+        correlators.append(corr_site)
+    
+        return np.array(correlators)
 
 

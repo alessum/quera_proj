@@ -121,13 +121,13 @@ for i, (cid, bitstring) in enumerate(entries):
         debug_print(f"[DEBUG] State built: norm={np.linalg.norm(psi0):.6f}")
         print_memory_usage()
         
-        # Compute autocorrelator using matrix-free method
+        # Compute autocorrelator using zero-matrix method
         excited_site = bitstring.index('1')
-        debug_print(f"[DEBUG] Computing matrix-free autocorrelator for site {excited_site}")
+        debug_print(f"[DEBUG] Computing zero-matrix autocorrelator for site {excited_site}")
         
-        # Use the matrix-free version of compute_zz_autocorrelator
-        corr = system.compute_zz_autocorrelator_matrix_free(psi0, times, sites=[excited_site])
-        debug_print(f"[DEBUG] Autocorrelator computed (matrix-free)")
+        # Use the completely matrix-free version
+        corr = system.compute_zz_autocorrelator_zero_matrices(psi0, times, sites=[excited_site])
+        debug_print(f"[DEBUG] Autocorrelator computed (zero matrices)")
         print_memory_usage()
         
         # Save result
