@@ -437,6 +437,73 @@ class RydbergLatticeSystem:
         
         return np.array(correlators)
 
+    def compute_zz_autocorrelator_truly_matrix_free(self, psi0, times, sites=None):
+        """
+        Compute ZZ autocorrelator using completely matrix-free time evolution.
+        Uses manual ODE integration instead of QuSpin's evolve method.
+        """
+        from scipy.integrate import solve_ivp
+        
+        if sites is None:
+            sites = list(range(len(self.positions)))
+        
+        def schrodinger_rhs(t, psi_flat):
+            """Right-hand side for Schrödinger equation: i∂ψ/∂t = H(t)ψ"""
+            psi = psi_flat.view(complex)
+            H_psi = self.apply_hamiltonian(psi, t)
+            return (-1j * H_psi).view(float)  # Convert to real array for solver
+        
+        correlators = []
+        
+        for site in sites:
+            print(f"[DEBUG] Computing correlator for site {site}")
+            corr_site = []
+            
+            # Pre-compute σ^z|ψ₀⟩
+            sigma_z_psi0 = self._apply_pauli_z(psi0, site)
+            
+            for i, t in enumerate(times):
+                if t == 0:
+                    # At t=0: ⟨ψ₀|σᶻ σᶻ|ψ₀⟩ = ⟨σᶻψ₀|σᶻψ₀⟩
+                    corr = np.vdot(sigma_z_psi0, sigma_z_psi0).real
+                else:
+                    try:
+                        # Solve Schrödinger equation from 0 to t
+                        sol = solve_ivp(
+                            schrodinger_rhs, 
+                            [0, t], 
+                            psi0.view(float),  # Convert complex to real array
+                            method='DOP853',   # High-accuracy method
+                            rtol=1e-6,         # Reduced tolerance for speed
+                            atol=1e-8,
+                            max_step=0.1       # Limit step size
+                        )
+                        
+                        if not sol.success:
+                            print(f"[WARNING] ODE solver failed at t={t}: {sol.message}")
+                            corr = 0.0
+                        else:
+                            # Get evolved state
+                            psi_t = sol.y[:, -1].view(complex)
+                            
+                            # Compute ⟨ψ(t)|σᶻ|ψ₀⟩ ⟨ψ₀|σᶻ|ψ(t)⟩
+                            sigma_z_psi_t = self._apply_pauli_z(psi_t, site)
+                            corr = np.vdot(sigma_z_psi_t, sigma_z_psi0).real
+                            
+                    except Exception as e:
+                        print(f"[ERROR] Time evolution failed at t={t}: {e}")
+                        corr = 0.0
+                
+                corr_site.append(corr)
+                
+                # Progress indicator
+                if i % 50 == 0:
+                    print(f"[DEBUG] Site {site}: completed {i+1}/{len(times)} time points")
+            
+            correlators.append(corr_site)
+        
+        return np.array(correlators)
+
     def _build_hamiltonian_object(self):
         """Build QuSpin Hamiltonian object in matrix-free mode"""
         Ns, h_arr = self.Ns, self.h
