@@ -405,16 +405,12 @@ class RydbergLatticeSystem:
         if sites is None:
             sites = list(range(len(self.positions)))
         
-        from quspin.tools.evolution import evolve
-        
-        # Build Hamiltonian object but don't convert to matrix
-        H_obj = self._build_hamiltonian_object()  # You'll need to implement this
+        # Build Hamiltonian object (matrix-free)
+        H_obj = self._build_hamiltonian_object()
         
         # Matrix-free time evolution
         def sigma_z_op(site):
             """Create sigma_z operator for given site"""
-            from quspin.operators import hamiltonian
-            N = len(self.positions)
             static = [["z", [[1.0, site]]]]
             return hamiltonian(static, [], basis=self.basis, dtype=np.complex128)
         
@@ -442,10 +438,72 @@ class RydbergLatticeSystem:
         return np.array(correlators)
 
     def _build_hamiltonian_object(self):
-        """Build QuSpin Hamiltonian object without converting to matrix"""
-        # This is the same as your build_hamiltonian() but returns the H object
-        # instead of calling H.tocsr() or similar
-        # ... copy your existing build_hamiltonian logic but return H directly
-        pass
+        """Build QuSpin Hamiltonian object in matrix-free mode"""
+        Ns, h_arr = self.Ns, self.h
+        ΔG, ΔL, C6 = self.Delta_G, self.Delta_L, self.C6
+        Omega_t, phi_t = self.Omega_t, self.phi_t
+        basis, rmat = self.basis, self.rmat
+
+        # Precomputing the kappa terms
+        kappa = np.zeros(Ns, dtype=float)
+        for j in range(Ns):
+            for k in range(Ns):
+                if j != k:
+                    kappa[j] += C6 / (2.0 * (rmat[j, k] ** 6))
+
+        # 1) STATIC TERMS
+        static_list = []
+
+        # 1a) σ^z term: ∑_j [ (κ_j − Δ_G − h_j Δ_L)/2 ] σ^z_j
+        sz_list = [
+            (0.5 * (kappa[j] - ΔG - h_arr[j] * ΔL), j)
+            for j in range(Ns)
+        ]
+        static_list.append(("z", sz_list))
+
+        # 1b) σ^z σ^z interactions: ∑_{j<k} [ C6/(4 r_{jk}^6) ] σ^z_j σ^z_k
+        zz_list = []
+        for j in range(Ns):
+            for k in range(j + 1, Ns):
+                pref = C6 / (4.0 * (rmat[j, k] ** 6))
+                zz_list.append((pref, j, k))
+        static_list.append(("zz", zz_list))
+
+        # 1c) Identity‐shift: 
+        #    ∑_j [ (−Δ_G − h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
+        I_list = []
+        for j in range(Ns):
+            shift = 0.5 * (-ΔG - h_arr[j] * ΔL)
+            shift += sum(C6 / (4.0 * (rmat[j, k] ** 6)) for k in range(Ns) if k != j)
+            I_list.append((shift, j))
+        static_list.append(("I", I_list))
+
+        # 2) DYNAMIC PART (time‐dependent drive)
+        def drive_minus(t, y=None, *args):
+            return 0.5 * Omega_t(t) * np.exp(1j * phi_t(t))
+
+        def drive_plus(t, y=None, *args):
+            return 0.5 * Omega_t(t) * np.exp(-1j * phi_t(t))
+
+        # site‐lists for σ^- and σ^+ terms: coefficient → σ^−_j and σ^+_j
+        drive_m_list = [[1, j] for j in range(Ns)]
+        drive_p_list = [[1, j] for j in range(Ns)]
+        dynamic_list = [
+            ["-", drive_m_list, drive_minus, []],
+            ["+", drive_p_list, drive_plus,  []],
+        ]
+
+        # BUILD HAMILTONIAN WITHOUT MATRIX CHECKS
+        H_obj = hamiltonian(
+            static_list,
+            dynamic_list,
+            basis=basis,
+            dtype=np.complex128,
+            check_herm=False,     # Skip matrix-based checks
+            check_pcon=False,     # Skip matrix-based checks  
+            check_symm=False      # Skip matrix-based checks
+        )
+        
+        return H_obj  # Return the Hamiltonian object
 
 
