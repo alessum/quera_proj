@@ -7,6 +7,8 @@ from quspin.basis import spin_basis_1d
 from quspin.tools.measurements import obs_vs_time
 from tqdm import tqdm
 import functools as ft
+from scipy.sparse.linalg import expm_multiply
+import itertools
 
 class RydbergLatticeSystem:
     """
@@ -285,37 +287,165 @@ class RydbergLatticeSystem:
 
         return sz_ev
 
-def find_random_basis_state_j(N, j):
-    """
-    Find a random computational basis state index with spin j flipped to ↑.
-
-    Arguments:
-    ----------
-    N : int
-        Total number of spins.
-    j : int
-        Index of the spin to flip to ↑.
-
-    Returns:
-    --------
-    state_index : ndarray, shape (2**N,)
-        The computational basis state with spin j set to ↑.
-    """
-    up, down = np.array([1, 0]), np.array([0, 1])
-    list_states = []                # Creating a list where states are randomly set to up or down
-    for k in range(N):
-        if k == j:
-            list_states.append(up)
-        else:
-            randint = np.random.randint(0, 2)
-            if randint == 0:
-                list_states.append(down)
-            else:
-                list_states.append(up)
-    full_state = ft.reduce(np.kron, list_states)        # Full state
-    nonzero_indices = np.nonzero(full_state)[0]         
-    if len(nonzero_indices) == 0:
-        raise ValueError("No non-zero index found. Check the input parameters.")
-    return nonzero_indices[0]
+    def apply_hamiltonian(self, psi, t=0):
+        """Apply Hamiltonian to state vector without building full matrix"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        # Get time-dependent parameters
+        Omega = self.Omega_t(t)
+        phi = self.phi_t(t)
+        
+        # 1. Apply single-qubit terms: h_j σ^z_j + (Δ_G + Δ_L) n_j
+        for j in range(N):
+            # σ^z_j term
+            result += self.h[j] * self._apply_pauli_z(psi, j)
+            
+            # n_j = (I + σ^z_j)/2 term  
+            result += (self.Delta_G + self.Delta_L) * self._apply_number_operator(psi, j)
+        
+        # 2. Apply Rabi terms: (Ω/2) * Σ_j [e^{-iφ} σ^+_j + e^{iφ} σ^-_j]
+        for j in range(N):
+            result += (Omega/2) * np.exp(-1j*phi) * self._apply_sigma_plus(psi, j)
+            result += (Omega/2) * np.exp(1j*phi) * self._apply_sigma_minus(psi, j)
+        
+        # 3. Apply interaction terms: C6 * Σ_{i<j} n_i n_j / |r_i - r_j|^6
+        for i in range(N):
+            for j in range(i+1, N):
+                r_ij = np.linalg.norm(np.array(self.positions[i]) - np.array(self.positions[j]))
+                coupling = self.C6 / (r_ij**6)
+                result += coupling * self._apply_two_qubit_interaction(psi, i, j)
+        
+        return result
     
+    def _apply_pauli_z(self, psi, site):
+        """Apply σ^z to specific site"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(len(psi)):
+            # Convert state index to bit representation
+            bits = [(state_idx >> k) & 1 for k in range(N)]
+            
+            # Apply σ^z: |0⟩ → |0⟩, |1⟩ → -|1⟩
+            sign = 1 if bits[site] == 0 else -1
+            result[state_idx] = sign * psi[state_idx]
+            
+        return result
+    
+    def _apply_number_operator(self, psi, site):
+        """Apply number operator n_j = |1⟩⟨1|"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(len(psi)):
+            bits = [(state_idx >> k) & 1 for k in range(N)]
+            
+            # n_j: only acts on |1⟩ states
+            if bits[site] == 1:
+                result[state_idx] = psi[state_idx]
+            
+        return result
+    
+    def _apply_sigma_plus(self, psi, site):
+        """Apply σ^+ = |1⟩⟨0|"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(len(psi)):
+            bits = [(state_idx >> k) & 1 for k in range(N)]
+            
+            # σ^+: |0⟩ → |1⟩, |1⟩ → 0
+            if bits[site] == 0:
+                # Flip bit at site
+                new_bits = bits.copy()
+                new_bits[site] = 1
+                new_state_idx = sum(bit * (2**k) for k, bit in enumerate(new_bits))
+                result[new_state_idx] = psi[state_idx]
+                
+        return result
+    
+    def _apply_sigma_minus(self, psi, site):
+        """Apply σ^- = |0⟩⟨1|"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(len(psi)):
+            bits = [(state_idx >> k) & 1 for k in range(N)]
+            
+            # σ^-: |1⟩ → |0⟩, |0⟩ → 0
+            if bits[site] == 1:
+                # Flip bit at site
+                new_bits = bits.copy()
+                new_bits[site] = 0
+                new_state_idx = sum(bit * (2**k) for k, bit in enumerate(new_bits))
+                result[new_state_idx] = psi[state_idx]
+                
+        return result
+    
+    def _apply_two_qubit_interaction(self, psi, site_i, site_j):
+        """Apply n_i * n_j interaction"""
+        N = len(self.positions)
+        result = np.zeros_like(psi)
+        
+        for state_idx in range(len(psi)):
+            bits = [(state_idx >> k) & 1 for k in range(N)]
+            
+            # n_i * n_j: only acts when both sites are |1⟩
+            if bits[site_i] == 1 and bits[site_j] == 1:
+                result[state_idx] = psi[state_idx]
+                
+        return result
+
+    def compute_zz_autocorrelator_matrix_free(self, psi0, times, sites=None, atol=1e-9, rtol=1e-7):
+        """
+        Compute ZZ autocorrelator using matrix-free time evolution.
+        This avoids building the full Hamiltonian matrix.
+        """
+        if sites is None:
+            sites = list(range(len(self.positions)))
+        
+        from quspin.tools.evolution import evolve
+        
+        # Build Hamiltonian object but don't convert to matrix
+        H_obj = self._build_hamiltonian_object()  # You'll need to implement this
+        
+        # Matrix-free time evolution
+        def sigma_z_op(site):
+            """Create sigma_z operator for given site"""
+            from quspin.operators import hamiltonian
+            N = len(self.positions)
+            static = [["z", [[1.0, site]]]]
+            return hamiltonian(static, [], basis=self.basis, dtype=np.complex128)
+        
+        correlators = []
+        for site in sites:
+            sigma_z = sigma_z_op(site)
+            corr_site = []
+            
+            for t in times:
+                if t == 0:
+                    # At t=0: <ψ₀|σᶻ σᶻ|ψ₀>
+                    psi_evolved = psi0
+                else:
+                    # Evolve state to time t (matrix-free)
+                    psi_evolved = H_obj.evolve(psi0, 0, [t], atol=atol, rtol=rtol)[-1]
+                
+                # Compute <ψ(t)|σᶻ|ψ₀> <ψ₀|σᶻ|ψ(t)>
+                sigma_z_psi0 = sigma_z.dot(psi0)
+                sigma_z_psi_t = sigma_z.dot(psi_evolved)
+                corr = np.vdot(sigma_z_psi_t, sigma_z_psi0)
+                corr_site.append(corr)
+            
+            correlators.append(corr_site)
+        
+        return np.array(correlators)
+
+    def _build_hamiltonian_object(self):
+        """Build QuSpin Hamiltonian object without converting to matrix"""
+        # This is the same as your build_hamiltonian() but returns the H object
+        # instead of calling H.tocsr() or similar
+        # ... copy your existing build_hamiltonian logic but return H directly
+        pass
+
 

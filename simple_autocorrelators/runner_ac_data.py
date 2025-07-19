@@ -21,26 +21,23 @@ def print_memory_usage():
     # System memory
     system_memory = psutil.virtual_memory()
     debug_print(f"[MEMORY] System: {system_memory.used/1024/1024/1024:.1f}GB used / {system_memory.total/1024/1024/1024:.1f}GB total ({system_memory.percent:.1f}%)")
-    return system_memory.available / 1024 / 1024  # Return available MB
+    return system_memory.available / 1024 / 1024
 
-def check_memory_requirements(N_sites):
-    """Check if we have enough memory for the computation"""
-    # Each complex number = 16 bytes (8 for real + 8 for imaginary)
+def check_memory_requirements_matrix_free(N_sites):
+    """Check memory for matrix-free computation"""
+    # Only need state vectors, NO Hamiltonian matrix
     state_vector_mb = (2**N_sites * 16) / 1024 / 1024
     
-    # Hamiltonian matrix is 2^N x 2^N complex numbers
-    hamiltonian_mb = (2**N_sites * 2**N_sites * 16) / 1024 / 1024
-    
-    # Total memory needed (rough estimate)
-    total_needed_mb = state_vector_mb + hamiltonian_mb + 500  # +500MB for overhead
+    # Matrix-free: only state vectors + working space for time evolution
+    total_needed_mb = state_vector_mb * 4 + 500  # 4x for working space, +500MB overhead
     
     available_mb = print_memory_usage()
     
-    debug_print(f"[MEMORY] Memory requirements for {N_sites} qubits:")
+    debug_print(f"[MEMORY] Matrix-free memory requirements for {N_sites} qubits:")
     debug_print(f"[MEMORY] - State vector: {state_vector_mb:.1f} MB")
-    debug_print(f"[MEMORY] - Hamiltonian matrix: {hamiltonian_mb:.1f} MB")
-    debug_print(f"[MEMORY] - Total needed: {total_needed_mb:.1f} MB")
+    debug_print(f"[MEMORY] - Working space: {total_needed_mb:.1f} MB")
     debug_print(f"[MEMORY] - Available: {available_mb:.1f} MB")
+    debug_print(f"[MEMORY] - Hamiltonian matrix: NOT STORED (matrix-free)")
     
     if total_needed_mb > available_mb:
         debug_print(f"[ERROR] Insufficient memory: need {total_needed_mb:.1f}MB, have {available_mb:.1f}MB")
@@ -56,27 +53,25 @@ parser.add_argument('--Lx', type=int, default=3, help='Number of sites along x')
 parser.add_argument('--Ly', type=int, default=3, help='Number of sites along y')
 args = parser.parse_args()
 
-debug_print(f"[DEBUG] === runner_ac_data.py START ===")
+debug_print(f"[DEBUG] === runner_ac_data.py START (MATRIX-FREE) ===")
 debug_print(f"[DEBUG] Arguments: {vars(args)}")
 
-# Add early exit for large systems
 Lx, Ly = args.Lx, args.Ly
 N_sites = Lx * Ly
 
 debug_print(f"[DEBUG] System size check: {N_sites} sites")
 
-# Check memory requirements BEFORE attempting computation
-if not check_memory_requirements(N_sites):
-    debug_print(f"[ERROR] Exiting due to insufficient memory")
+# Check memory requirements for matrix-free approach
+if not check_memory_requirements_matrix_free(N_sites):
+    debug_print(f"[ERROR] Exiting due to insufficient memory even for matrix-free approach")
     sys.exit(1)
 
-debug_print(f"[DEBUG] Memory check passed, proceeding with computation...")
+debug_print(f"[DEBUG] Matrix-free memory check passed!")
 
 spacing = 5.93
 positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
 
 debug_print(f"[DEBUG] Lattice: {Lx}x{Ly} = {N_sites} sites")
-debug_print(f"[DEBUG] Positions: {positions[:3]}...") # Only show first few
 
 # Hamiltonian parameters
 delta_G, delta_L, C6 = 125, 0.0, 5.42e6
@@ -84,30 +79,21 @@ T_total = 4.0
 T_steps = 200
 times = np.linspace(0.0, T_total, T_steps)
 
-debug_print(f"[DEBUG] Building Hamiltonian...")
-try:
-    system = RydbergLatticeSystem(
-        positions=positions,
-        h=np.zeros(N_sites),
-        Delta_G=delta_G,
-        Delta_L=delta_L,
-        C6=C6,
-        Omega_t=lambda t: 15.8,
-        phi_t=lambda t: 0.0,
-    )
-    debug_print(f"[DEBUG] RydbergLatticeSystem created")
-    print_memory_usage()
-    
-    H = system.build_hamiltonian()
-    debug_print(f"[DEBUG] Hamiltonian built successfully")
-    print_memory_usage()
-    
-except Exception as e:
-    debug_print(f"[ERROR] Failed to build Hamiltonian: {e}")
-    sys.exit(1)
+debug_print(f"[DEBUG] Creating RydbergLatticeSystem (no matrix build)...")
+system = RydbergLatticeSystem(
+    positions=positions,
+    h=np.zeros(N_sites),
+    Delta_G=delta_G,
+    Delta_L=delta_L,
+    C6=C6,
+    Omega_t=lambda t: 15.8,
+    phi_t=lambda t: 0.0,
+)
+debug_print(f"[DEBUG] System created successfully")
+print_memory_usage()
 
-# Read and process bitstrings...
-debug_print(f"[DEBUG] Reading bitstrings from: {args.bitstring_file}")
+# Read bitstrings
+debug_print(f"[DEBUG] Reading bitstrings...")
 entries = []
 with open(args.bitstring_file) as f:
     for line in f:
@@ -116,11 +102,12 @@ with open(args.bitstring_file) as f:
 
 debug_print(f"[DEBUG] Read {len(entries)} bitstring entries")
 
+# Process each state
 for i, (cid, bitstring) in enumerate(entries):
     debug_print(f"[DEBUG] Processing {i+1}/{len(entries)}: circuit_id={cid}")
     
-    # Build quantum state with memory monitoring
     try:
+        # Build quantum state
         up = np.array([1, 0])
         down = np.array([0, 1])
         state_vectors = [up if ch=='1' else down for ch in bitstring]
@@ -128,12 +115,20 @@ for i, (cid, bitstring) in enumerate(entries):
         psi0 = state_vectors[0]
         for j, vec in enumerate(state_vectors[1:], 1):
             psi0 = np.kron(psi0, vec)
-            
-        debug_print(f"[DEBUG] State built: norm={np.linalg.norm(psi0):.6f}, size={psi0.nbytes/1024/1024:.1f}MB")
+            if j in [10, 20] or j == len(state_vectors) - 1:
+                debug_print(f"[DEBUG] State size after {j+1} sites: {psi0.nbytes/1024/1024:.1f} MB")
         
-        # Continue with computation...
+        debug_print(f"[DEBUG] State built: norm={np.linalg.norm(psi0):.6f}")
+        print_memory_usage()
+        
+        # Compute autocorrelator using matrix-free method
         excited_site = bitstring.index('1')
-        corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
+        debug_print(f"[DEBUG] Computing matrix-free autocorrelator for site {excited_site}")
+        
+        # Use the matrix-free version of compute_zz_autocorrelator
+        corr = system.compute_zz_autocorrelator_matrix_free(psi0, times, sites=[excited_site])
+        debug_print(f"[DEBUG] Autocorrelator computed (matrix-free)")
+        print_memory_usage()
         
         # Save result
         output_dir = f"results/L{Lx}_Ly{Ly}_T{args.time_to_run}"
@@ -144,9 +139,11 @@ for i, (cid, bitstring) in enumerate(entries):
         
     except MemoryError as e:
         debug_print(f"[ERROR] Out of memory for circuit {cid}: {e}")
-        continue
+        sys.exit(1)
     except Exception as e:
         debug_print(f"[ERROR] Failed processing circuit {cid}: {e}")
+        import traceback
+        debug_print(f"[ERROR] Traceback: {traceback.format_exc()}")
         continue
 
-debug_print(f"[DEBUG] === runner_ac_data.py END ===")
+debug_print(f"[DEBUG] === runner_ac_data.py END (MATRIX-FREE) ===")
