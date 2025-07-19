@@ -81,7 +81,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install quspin numpy scipy tqdm sympy imageio
+          pip install quspin numpy scipy tqdm sympy imageio psutil
 
       - name: Check memory before
         run: free -m
