@@ -99,7 +99,7 @@ def main():
             '--time_to_run',     str(args.time),
             '--Lx',              str(args.Lx),
             '--Ly',              str(args.Ly),
-        ], check=True, capture_output=True, text=True, timeout=7200)
+        ], check=True, capture_output=True, text=True, timeout=72000)
         
         debug_print(f"[DEBUG] Runner completed successfully")
         if result.stdout:

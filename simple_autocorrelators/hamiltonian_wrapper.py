@@ -12,11 +12,11 @@ import itertools
 
 class RydbergLatticeSystem:
     """
-    A 2D Rydberg lattice of N qubits with van‐der‐Waals (1/r^6) interactions
-    and a global time‐dependent drive Ω(t)e^{±iφ(t)}.
+    A 2D Rydberg lattice of N qubits with van-der-Waals (1/r^6) interactions
+    and a global time-dependent drive Ω(t)e^{±iφ(t)}.
 
     Methods:
-      - build_hamiltonian(): constructs the time‐dependent QuSpin Hamiltonian H(t).
+      - build_hamiltonian(): constructs the time-dependent QuSpin Hamiltonian H(t).
       - plot_lattice(): visualizes the (x,y) coordinates of each qubit.
       - compute_zz_autocorrelator(): computes C_{jj}(t) = ⟨σ^z_j(t) σ^z_j(0)⟩.
     """
@@ -34,11 +34,11 @@ class RydbergLatticeSystem:
         h : array_like of length N
             Helmholtz factor h_j for each site.
         Delta_G, Delta_L, C6 : float
-            Global detuning Δ_G, lattice detuning factor Δ_L, and van‐der‐Waals coefficient C6.
+            Global detuning Δ_G, lattice detuning factor Δ_L, and van-der-Waals coefficient C6.
         Omega_t : callable, Ω(t) → float
-            Time‐dependent Rabi frequency (can be complex).
+            Time-dependent Rabi frequency (can be complex).
         phi_t : callable, φ(t) → float
-            Time‐dependent phase.
+            Time-dependent phase.
         """
         self.positions = np.array(positions, dtype=float)  # shape = (N, 2)
         self.Ns = len(positions)
@@ -52,7 +52,7 @@ class RydbergLatticeSystem:
         # Construct a spin_basis_1d with pauli=True so that σ^z, σ^+, σ^- are available
         self.basis = spin_basis_1d(L=self.Ns, pauli=True)
 
-        # Precompute pairwise distances r_{jk} = ||r_j − r_k||
+        # Precompute pairwise distances r_{jk} = ||r_j - r_k||
         coords = self.positions
         self.rmat = np.full((self.Ns, self.Ns), np.inf, dtype=float)
         for i in range(self.Ns):
@@ -65,15 +65,15 @@ class RydbergLatticeSystem:
 
     def build_hamiltonian(self):
         """
-        Build and return the time‐dependent Hamiltonian H(t) using QuSpin.
+        Build and return the time-dependent Hamiltonian H(t) using QuSpin.
 
         The Hamiltonian has:
           1) Static terms:
-             a) ∑_j [ (κ_j − Δ_G − h_j Δ_L)/2 ] σ^z_j
+             a) ∑_j [ (κ_j - Δ_G - h_j Δ_L)/2 ] σ^z_j
              b) ∑_{j<k} [ C6/(4 r_{jk}^6 ) ] σ^z_j σ^z_k
-             c) Identity shifts: ∑_j [ (−Δ_G − h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
+             c) Identity shifts: ∑_j [ (-Δ_G - h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
           2) Dynamic drive:
-             Ω(t)/2 e^{+iφ(t)} ∑_j σ^-_j  +  Ω(t)/2 e^{−iφ(t)} ∑_j σ^+_j
+             Ω(t)/2 e^{+iφ(t)} ∑_j σ^-_j  +  Ω(t)/2 e^{-iφ(t)} ∑_j σ^+_j
         """
         Ns, h_arr = self.Ns, self.h
         ΔG, ΔL, C6 = self.Delta_G, self.Delta_L, self.C6
@@ -90,7 +90,7 @@ class RydbergLatticeSystem:
         # 1) STATIC TERMS
         static_list = []
 
-        # 1a) σ^z term: ∑_j [ (κ_j − Δ_G − h_j Δ_L)/2 ] σ^z_j
+        # 1a) σ^z term: ∑_j [ (κ_j - Δ_G - h_j Δ_L)/2 ] σ^z_j
         sz_list = [
             (0.5 * (kappa[j] - ΔG - h_arr[j] * ΔL), j)
             for j in range(Ns)
@@ -105,8 +105,8 @@ class RydbergLatticeSystem:
                 zz_list.append((pref, j, k))
         static_list.append(("zz", zz_list))
 
-        # 1c) Identity‐shift: 
-        #    ∑_j [ (−Δ_G − h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
+        # 1c) Identity-shift: 
+        #    ∑_j [ (-Δ_G - h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
         I_list = []
         for j in range(Ns):
             shift = 0.5 * (-ΔG - h_arr[j] * ΔL)
@@ -114,14 +114,14 @@ class RydbergLatticeSystem:
             I_list.append((shift, j))
         static_list.append(("I", I_list))
 
-        # 2) DYNAMIC PART (time‐dependent drive)
+        # 2) DYNAMIC PART (time-dependent drive)
         def drive_minus(t, y=None, *args):
             return 0.5 * Omega_t(t) * np.exp(1j * phi_t(t))
 
         def drive_plus(t, y=None, *args):
             return 0.5 * Omega_t(t) * np.exp(-1j * phi_t(t))
 
-        # site‐lists for σ^- and σ^+ terms: coefficient → σ^−_j and σ^+_j
+        # site-lists for σ^- and σ^+ terms: coefficient → σ^-_j and σ^+_j
         drive_m_list = [[1, j] for j in range(Ns)]
         drive_p_list = [[1, j] for j in range(Ns)]
         dynamic_list = [
@@ -168,7 +168,7 @@ class RydbergLatticeSystem:
 
     def compute_zz_autocorrelator(self, psi0, times, sites=None, percentage=None, atol=1e-9, rtol=1e-7):
         """
-        Compute on‐site ZZ autocorrelator:
+        Compute on-site ZZ autocorrelator:
           C_{jj}(t) = ⟨ψ₀ | σ^z_j(t) σ^z_j(0) | ψ₀⟩.
 
         Arguments:
@@ -178,7 +178,7 @@ class RydbergLatticeSystem:
         times : array_like of floats
             Times at which to compute C_{jj}(t).
         sites : sequence of int, optional
-            If None, computes for all j = 0..N_s−1.
+            If None, computes for all j = 0..N_s-1.
         atol, rtol : float
             Tolerances for the ODE solver.
 
@@ -204,13 +204,13 @@ class RydbergLatticeSystem:
         # Evolve |ψ₀⟩ under H(t): shape = (2^N, T)
         psi_t = self.H.evolve(psi0, 0.0, times, atol=atol, rtol=rtol)
 
-        # Pre‐grab basis‐state bit‐patterns (length = 2^N)
+        # Pre-grab basis-state bit-patterns (length = 2^N)
         states = basis.states
 
         for p, j in tqdm(enumerate(sites), 
                          desc=f"Computing ZZ correlators {percentage:.2f}", total=M):
             # Build ±1 diagonal for σ^z_j:
-            bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin‐j is ↓, 1 if ↑
+            bit_j = ((states >> j) & 1).astype(np.int8)             # 0 if spin-j is ↓, 1 if ↑
             sz_vals = 2*bit_j - 1                 # map {0→-1, 1→+1}
 
             # |χ₀⟩ = σ^z_j |ψ₀⟩ is just elementwise multiply by ±1
@@ -239,7 +239,7 @@ class RydbergLatticeSystem:
         times : array_like of floats
             Times at which to compute C_{jj}(t).
         sites : sequence of int, optional
-            If None, computes for all j = 0..N_s−1.
+            If None, computes for all j = 0..N_s-1.
         atol, rtol : float
             Tolerances for the ODE solver.
 
@@ -396,136 +396,6 @@ class RydbergLatticeSystem:
                 result[state_idx] = psi[state_idx]
                 
         return result
-
-
-    def _build_hamiltonian_object(self):
-        """Build QuSpin Hamiltonian object in matrix-free mode"""
-        Ns, h_arr = self.Ns, self.h
-        ΔG, ΔL, C6 = self.Delta_G, self.Delta_L, self.C6
-        Omega_t, phi_t = self.Omega_t, self.phi_t
-        basis, rmat = self.basis, self.rmat
-
-        # Precomputing the kappa terms
-        kappa = np.zeros(Ns, dtype=float)
-        for j in range(Ns):
-            for k in range(Ns):
-                if j != k:
-                    kappa[j] += C6 / (2.0 * (rmat[j, k] ** 6))
-
-        # 1) STATIC TERMS
-        static_list = []
-
-        # 1a) σ^z term: ∑_j [ (κ_j − Δ_G − h_j Δ_L)/2 ] σ^z_j
-        sz_list = [
-            (0.5 * (kappa[j] - ΔG - h_arr[j] * ΔL), j)
-            for j in range(Ns)
-        ]
-        static_list.append(("z", sz_list))
-
-        # 1b) σ^z σ^z interactions: ∑_{j<k} [ C6/(4 r_{jk}^6) ] σ^z_j σ^z_k
-        zz_list = []
-        for j in range(Ns):
-            for k in range(j + 1, Ns):
-                pref = C6 / (4.0 * (rmat[j, k] ** 6))
-                zz_list.append((pref, j, k))
-        static_list.append(("zz", zz_list))
-
-        # 1c) Identity‐shift: 
-        #    ∑_j [ (−Δ_G − h_j Δ_L)/2 + ∑_{k≠j} C6/(4 r_{jk}^6 ) ] · I_j
-        I_list = []
-        for j in range(Ns):
-            shift = 0.5 * (-ΔG - h_arr[j] * ΔL)
-            shift += sum(C6 / (4.0 * (rmat[j, k] ** 6)) for k in range(Ns) if k != j)
-            I_list.append((shift, j))
-        static_list.append(("I", I_list))
-
-        # 2) DYNAMIC PART (time‐dependent drive)
-        def drive_minus(t, y=None, *args):
-            return 0.5 * Omega_t(t) * np.exp(1j * phi_t(t))
-
-        def drive_plus(t, y=None, *args):
-            return 0.5 * Omega_t(t) * np.exp(-1j * phi_t(t))
-
-        # site‐lists for σ^- and σ^+ terms: coefficient → σ^−_j and σ^+_j
-        drive_m_list = [[1, j] for j in range(Ns)]
-        drive_p_list = [[1, j] for j in range(Ns)]
-        dynamic_list = [
-            ["-", drive_m_list, drive_minus, []],
-            ["+", drive_p_list, drive_plus,  []],
-        ]
-
-        # BUILD HAMILTONIAN WITHOUT MATRIX CHECKS
-        H_obj = hamiltonian(
-            static_list,
-            dynamic_list,
-            basis=basis,
-            dtype=np.complex128,
-            check_herm=False,     # Skip matrix-based checks
-            check_pcon=False,     # Skip matrix-based checks  
-            check_symm=False      # Skip matrix-based checks
-        )
-        
-        return H_obj  # Return the Hamiltonian object
-    
-    def apply_hamiltonian_efficient(self, psi, t=0):
-        """Apply Hamiltonian efficiently using vectorized operations"""
-        N = len(self.positions)
-        Omega = self.Omega_t(t)
-        phi = self.phi_t(t)
-        
-        # Use basis states for efficient bit operations
-        states = self.basis.states  # Shape: (2^N,) - precomputed bit patterns
-        result = np.zeros_like(psi)
-        
-        # 1. Apply σ^z terms efficiently
-        for j in range(N):
-            # Extract bit j from all states at once
-            bit_j = (states >> j) & 1  # 0 or 1 for each state
-            sz_vals = 2 * bit_j - 1    # Convert to ±1
-            result += self.h[j] * sz_vals * psi
-    
-        # 2. Apply number operators efficiently  
-        for j in range(N):
-            bit_j = (states >> j) & 1
-            result += (self.Delta_G + self.Delta_L) * bit_j * psi
-    
-        # 3. Apply Rabi terms efficiently (σ^+ and σ^-)
-        for j in range(N):
-            # σ^+ flips 0→1 at site j
-            mask_down = ((states >> j) & 1) == 0  # States with bit j = 0
-            if np.any(mask_down):
-                target_states = states[mask_down] | (1 << j)  # Flip bit j to 1
-                # Find indices of target states
-                target_indices = np.searchsorted(states, target_states)
-                result[target_indices] += (Omega/2) * np.exp(-1j*phi) * psi[mask_down]
-            
-            # σ^- flips 1→0 at site j
-            mask_up = ((states >> j) & 1) == 1    # States with bit j = 1
-            if np.any(mask_up):
-                target_states = states[mask_up] & ~(1 << j)  # Flip bit j to 0
-                target_indices = np.searchsorted(states, target_states)
-                result[target_indices] += (Omega/2) * np.exp(1j*phi) * psi[mask_up]
-    
-        # 4. Apply interaction terms efficiently
-        for i in range(N):
-            for j in range(i+1, N):
-                # n_i * n_j: both bits must be 1
-                bit_i = (states >> i) & 1
-                bit_j = (states >> j) & 1
-                interaction_mask = bit_i * bit_j  # 1 only when both are 1
-                
-                r_ij = self.rmat[i, j]
-                coupling = self.C6 / (r_ij**6)
-                result += coupling * interaction_mask * psi
-    
-        return result
-    
-    def _apply_pauli_z_efficient(self, psi, site):
-        """Apply σ^z efficiently using basis states"""
-        states = self.basis.states
-        bit_vals = (states >> site) & 1
-        sz_vals = 2 * bit_vals - 1  # Convert 0,1 to -1,+1
-        return sz_vals * psi
 
     def apply_hamiltonian_pure_manual(self, psi, t=0):
         """Apply Hamiltonian with ZERO matrices - pure bit operations"""
