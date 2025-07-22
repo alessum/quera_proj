@@ -6,6 +6,10 @@ import psutil
 from tqdm import tqdm
 from hamiltonian_wrapper import RydbergLatticeSystem
 
+# Usage:
+# Matrix-based (higher accuracy, more memory): python runner_ac_data.py --bitstring-file file.txt
+# Matrix-free (lower memory, faster): python runner_ac_data.py --bitstring-file file.txt --matrix-free
+
 def debug_print(msg):
     """Print with immediate flush for real-time output"""
     print(msg)
@@ -22,6 +26,29 @@ def print_memory_usage():
     system_memory = psutil.virtual_memory()
     debug_print(f"[MEMORY] System: {system_memory.used/1024/1024/1024:.1f}GB used / {system_memory.total/1024/1024/1024:.1f}GB total ({system_memory.percent:.1f}%)")
     return system_memory.available / 1024 / 1024
+
+def check_memory_requirements_matrix_based(N_sites):
+    """Check memory for matrix-based computation"""
+    # State vector
+    state_vector_mb = (2**N_sites * 16) / 1024 / 1024
+    # Hamiltonian matrix (sparse)
+    hamiltonian_mb = (2**N_sites * 2**N_sites * 16) / 1024 / 1024 * 0.1  # Assume 10% sparsity
+    # Working space for time evolution
+    total_needed_mb = state_vector_mb * 4 + hamiltonian_mb + 1000  # 4x for working space, +1GB overhead
+    
+    available_mb = print_memory_usage()
+    
+    debug_print(f"[MEMORY] Matrix-based memory requirements for {N_sites} qubits:")
+    debug_print(f"[MEMORY] - State vector: {state_vector_mb:.1f} MB")
+    debug_print(f"[MEMORY] - Hamiltonian matrix (sparse): {hamiltonian_mb:.1f} MB")
+    debug_print(f"[MEMORY] - Working space: {total_needed_mb:.1f} MB")
+    debug_print(f"[MEMORY] - Available: {available_mb:.1f} MB")
+    
+    if total_needed_mb > available_mb:
+        debug_print(f"[ERROR] Insufficient memory: need {total_needed_mb:.1f}MB, have {available_mb:.1f}MB")
+        return False
+    
+    return True
 
 def check_memory_requirements_matrix_free(N_sites):
     """Check memory for matrix-free computation"""
@@ -51,9 +78,10 @@ parser.add_argument('--bitstring-file', required=True)
 parser.add_argument('--time_to_run', type=int, default=1000)
 parser.add_argument('--Lx', type=int, default=3, help='Number of sites along x')
 parser.add_argument('--Ly', type=int, default=3, help='Number of sites along y')
+parser.add_argument('--matrix-free', action='store_true', help='Use matrix-free computation (default: False)')
 args = parser.parse_args()
 
-debug_print(f"[DEBUG] === runner_ac_data.py START (MATRIX-FREE) ===")
+debug_print(f"[DEBUG] === runner_ac_data.py START ({'MATRIX-FREE' if args.matrix_free else 'MATRIX-BASED'}) ===")
 debug_print(f"[DEBUG] Arguments: {vars(args)}")
 
 Lx, Ly = args.Lx, args.Ly
@@ -61,12 +89,18 @@ N_sites = Lx * Ly
 
 debug_print(f"[DEBUG] System size check: {N_sites} sites")
 
-# Check memory requirements for matrix-free approach
-if not check_memory_requirements_matrix_free(N_sites):
-    debug_print(f"[ERROR] Exiting due to insufficient memory even for matrix-free approach")
-    sys.exit(1)
-
-debug_print(f"[DEBUG] Matrix-free memory check passed!")
+# Check memory requirements based on chosen approach
+if args.matrix_free:
+    if not check_memory_requirements_matrix_free(N_sites):
+        debug_print(f"[ERROR] Exiting due to insufficient memory for matrix-free approach")
+        sys.exit(1)
+    debug_print(f"[DEBUG] Matrix-free memory check passed!")
+else:
+    if not check_memory_requirements_matrix_based(N_sites):
+        debug_print(f"[ERROR] Exiting due to insufficient memory for matrix-based approach")
+        debug_print(f"[HINT] Try using --matrix-free flag for lower memory usage")
+        sys.exit(1)
+    debug_print(f"[DEBUG] Matrix-based memory check passed!")
 
 spacing = 5.93
 positions = [(i * spacing, j * spacing) for i in range(Lx) for j in range(Ly)]
@@ -79,7 +113,7 @@ T_total = 4.0
 T_steps = 200
 times = np.linspace(0.0, T_total, T_steps)
 
-debug_print(f"[DEBUG] Creating RydbergLatticeSystem (no matrix build)...")
+debug_print(f"[DEBUG] Creating RydbergLatticeSystem...")
 system = RydbergLatticeSystem(
     positions=positions,
     h=np.zeros(N_sites),
@@ -90,6 +124,13 @@ system = RydbergLatticeSystem(
     phi_t=lambda t: 0.0,
 )
 debug_print(f"[DEBUG] System created successfully")
+
+# Build Hamiltonian if not using matrix-free approach
+if not args.matrix_free:
+    debug_print(f"[DEBUG] Building Hamiltonian matrix...")
+    system.build_hamiltonian()
+    debug_print(f"[DEBUG] Hamiltonian built successfully")
+
 print_memory_usage()
 
 # Read bitstrings
@@ -121,18 +162,22 @@ for i, (cid, bitstring) in enumerate(entries):
         debug_print(f"[DEBUG] State built: norm={np.linalg.norm(psi0):.6f}")
         print_memory_usage()
         
-        # Compute autocorrelator using zero-matrix method
+        # Compute autocorrelator using chosen method
         excited_site = bitstring.index('1')
-        debug_print(f"[DEBUG] Computing zero-matrix autocorrelator for site {excited_site}")
         
-        # Use the completely matrix-free version
-        # corr = system.compute_zz_autocorrelator_zero_matrices(psi0, times, sites=[excited_site])
-        corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
-        debug_print(f"[DEBUG] Autocorrelator computed (zero matrices)")
+        if args.matrix_free:
+            debug_print(f"[DEBUG] Computing zero-matrix autocorrelator for site {excited_site}")
+            corr = system.compute_zz_autocorrelator_zero_matrices(psi0, times, sites=[excited_site])
+            debug_print(f"[DEBUG] Autocorrelator computed (matrix-free)")
+        else:
+            debug_print(f"[DEBUG] Computing matrix-based autocorrelator for site {excited_site}")
+            corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
+            debug_print(f"[DEBUG] Autocorrelator computed (matrix-based)")
+            
         print_memory_usage()
         
         # Save result
-        output_dir = f"results/L{Lx}_Ly{Ly}_T{args.time_to_run}"
+        output_dir = f"results/L{Lx}_Ly{Ly}_T{args.time_to_run}{'_matrix_free' if args.matrix_free else '_matrix_based'}"
         os.makedirs(output_dir, exist_ok=True)
         fn = os.path.join(output_dir, f"correlator_circuit{cid}.csv")
         np.savetxt(fn, np.real(corr), delimiter=',')
@@ -147,4 +192,4 @@ for i, (cid, bitstring) in enumerate(entries):
         debug_print(f"[ERROR] Traceback: {traceback.format_exc()}")
         continue
 
-debug_print(f"[DEBUG] === runner_ac_data.py END (MATRIX-FREE) ===")
+debug_print(f"[DEBUG] === runner_ac_data.py END ({'MATRIX-FREE' if args.matrix_free else 'MATRIX-BASED'}) ===")
