@@ -171,7 +171,9 @@ for i, (cid, bitstring) in enumerate(entries):
             debug_print(f"[DEBUG] Autocorrelator computed (matrix-free)")
         else:
             debug_print(f"[DEBUG] Computing matrix-based autocorrelator for site {excited_site}")
-            corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
+            # Calculate percentage based on current progress
+            progress_pct = ((i + 1) / len(entries)) * 100
+            corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site], percentage=progress_pct)
             debug_print(f"[DEBUG] Autocorrelator computed (matrix-based)")
             
         print_memory_usage()
