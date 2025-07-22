@@ -126,7 +126,8 @@ for i, (cid, bitstring) in enumerate(entries):
         debug_print(f"[DEBUG] Computing zero-matrix autocorrelator for site {excited_site}")
         
         # Use the completely matrix-free version
-        corr = system.compute_zz_autocorrelator_zero_matrices(psi0, times, sites=[excited_site])
+        # corr = system.compute_zz_autocorrelator_zero_matrices(psi0, times, sites=[excited_site])
+        corr = system.compute_zz_autocorrelator(psi0, times, sites=[excited_site])
         debug_print(f"[DEBUG] Autocorrelator computed (zero matrices)")
         print_memory_usage()
         
